@@ -1847,5 +1847,19 @@
         app.init();
         window.app = app; 
     </script>
+    // Funkcja wysyłająca dane do Twojego Agenta AI na Netlify
+async function askAgent(textData, mode = 'general') {
+    try {
+        const response = await fetch('/.netlify/functions/agent', {
+            method: 'POST',
+            body: JSON.stringify({ text: textData, mode: mode })
+        });
+        const result = await response.json();
+        console.log("Odpowiedź Agenta:", result.answer);
+        return result.answer;
+    } catch (error) {
+        console.error("Błąd Agenta:", error);
+    }
+}
 </body>
 </html>
