@@ -245,7 +245,12 @@
         <button class="btn-danger" onclick="app.logic.clearData()">⚠️ RESET DANYCH</button>
         <input type="file" id="importFile" style="display:none" onchange="app.io.importData(this)">
     </div>
-
+<div id="allegro-panel" style="margin: 20px; padding: 15px; background: var(--color-surface); border-radius: 8px; border: 1px solid var(--color-accent);">
+    <h3 style="margin-top: 0; color: var(--color-accent);">Automatyzacja Allegro</h3>
+    <p id="allegro-status" style="font-size: 0.9em; color: var(--color-text-muted);">Status: Niepołączono</p>
+    <button id="btn-allegro-login" onclick="loginToAllegro()" class="btn-primary">Połącz z Allegro</button>
+    <button id="btn-allegro-sync" onclick="syncAllegroOrders()" class="btn-secondary" style="display: none;">Pobierz nowe zamówienia</button>
+</div>
     <!-- MAIN CONTENT -->
     <div class="main-content">
         <div class="panel">
