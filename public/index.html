@@ -1852,46 +1852,47 @@
         app.init();
         window.app = app; 
     </script>
-    // Funkcja wysyłająca dane do Twojego Agenta AI na Netlify
-async function askAgent(textData, mode = 'general') {
-    try {
-        const response = await fetch('/.netlify/functions/agent', {
-            method: 'POST',
-            body: JSON.stringify({ text: textData, mode: mode })
-        });
-        const result = await response.json();
-        console.log("Odpowiedź Agenta:", result.answer);
-        return result.answer;
-    } catch (error) {
-        console.error("Błąd Agenta:", error);
-    }
-}
-    const axios = require('axios');
+    // ... (koniec Twojego oryginalnego kodu programu)
+        app.init();
+        window.app = app;
 
-exports.handler = async (event) => {
-    // Dane Twojej aplikacji z Allegro (najlepiej trzymać w zmiennych Netlify!)
-    const clientId = process.env.ALLEGRO_CLIENT_ID;
-    const clientSecret = process.env.ALLEGRO_CLIENT_SECRET;
-    
-    // Kodowanie do Base64 dla Allegro
-    const auth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-
-    try {
-        const response = await axios.post('https://allegro.pl/auth/oauth/device', 
-            `client_id=${clientId}`, {
-            headers: {
-                'Authorization': `Basic ${auth}`,
-                'Content-Type': 'application/x-www-form-urlencoded'
+        // Funkcja wysyłająca dane do Twojego Agenta AI na Netlify
+        async function askAgent(textData, mode = 'general') {
+            try {
+                const response = await fetch('/.netlify/functions/agent', {
+                    method: 'POST',
+                    body: JSON.stringify({ text: textData, mode: mode })
+                });
+                const result = await response.json();
+                console.log("Odpowiedź Agenta:", result.answer);
+                return result.answer;
+            } catch (error) {
+                console.error("Błąd Agenta:", error);
             }
-        });
+        }
 
-        return {
-            statusCode: 200,
-            body: JSON.stringify(response.data)
-        };
-    } catch (error) {
-        return { statusCode: 500, body: JSON.stringify(error.response.data) };
-    }
-};
+        // --- NOWY KOD LOGOWANIA ALLEGRO ---
+        const ALLEGRO_CLIENT_ID = 'TWÓJ_CLIENT_ID_Z_ALLEGRO'; // Wpisz tu swój ID!
+
+        async function loginToAllegro() {
+            const statusEl = document.getElementById('allegro-status');
+            if(statusEl) statusEl.innerText = "Status: Generowanie kodu...";
+
+            try {
+                const response = await fetch('/.netlify/functions/allegro-auth', { method: 'POST' });
+                const data = await response.json();
+
+                if (data.user_code) {
+                    alert(`Twój kod powiązania to: ${data.user_code}\nKliknij OK, aby przejść do Allegro i wkleić kod.`);
+                    window.open(data.verification_uri, '_blank');
+                    if(statusEl) statusEl.innerHTML = `Wpisz kod <b>${data.user_code}</b> na Allegro.`;
+                    document.getElementById('btn-allegro-sync').style.display = 'inline-block';
+                }
+            } catch (err) {
+                if(statusEl) statusEl.innerText = "Błąd: Nie udało się połączyć.";
+                console.error(err);
+            }
+        }
+    </script>
 </body>
 </html>
