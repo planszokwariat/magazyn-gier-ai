@@ -12,7 +12,7 @@ exports.handler = async (event) => {
         const promptText = `Jesteś asystentem magazynu gier planszowych. Przeanalizuj dane JSON z Allegro: ${body.text}. Wypisz w punktach: tytuł gry i ilość sztuk. Odpowiadaj krótko.`;
 
         const response = await axios.post(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+            `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
             { contents: [{ parts: [{ text: promptText }] }] },
             { headers: { 'Content-Type': 'application/json' } }
         );
