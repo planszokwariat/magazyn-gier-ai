@@ -1939,7 +1939,6 @@ async function syncAllegroOrders() {
             return;
         }
 
-        // Zapisujemy ID do późniejszego zatwierdzenia
         pendingAllegroOrdersIds = newOrders.map(o => o.id);
 
         const aiResponse = await askAgent(JSON.stringify(newOrders), 'allegro_sync');
@@ -1952,25 +1951,34 @@ async function syncAllegroOrders() {
             return;
         }
 
-        // TWORZENIE WIDOKU BUFORA Z WYSZUKIWARKĄ
+        // --- NAPRAWIONE CZYTANIE MAGAZYNU ---
         let currentInventory = [];
-        // Upewniamy się, że pobieramy tytuły z pierwszych kolumn tabeli
         document.querySelectorAll('#inventory-body tr').forEach(row => {
-            let title = row.cells[0].innerText.trim();
-            if(title) currentInventory.push(title); 
+            let cell = row.cells[0];
+            if (!cell) return;
+            
+            // Sprawdzamy, czy nazwa gry jest w polu <input> czy jako zwykły tekst
+            let inputField = cell.querySelector('input');
+            let title = inputField ? inputField.value.trim() : cell.innerText.trim();
+            
+            if (title && title !== "") {
+                currentInventory.push(title); 
+            }
         });
 
-        // Tworzymy ukrytą bazę podpowiedzi do wyszukiwarki (Datalist)
-        let datalistHtml = '<datalist id="inventory-titles">';
-        currentInventory.forEach(invTitle => {
-            datalistHtml += `<option value="${invTitle}">`;
-        });
-        datalistHtml += '</datalist>';
+        // Wypełnianie bazy podpowiedzi (Datalist) bezpośrednio w HTML
+        let datalist = document.getElementById('inventory-titles');
+        if (datalist) {
+            datalist.innerHTML = ''; // Czyścimy starą bazę
+            currentInventory.forEach(invTitle => {
+                let option = document.createElement('option');
+                option.value = invTitle;
+                datalist.appendChild(option);
+            });
+        }
 
-        let html = datalistHtml;
-        
-        // Zabezpieczenie szerokości tabeli (wymusza łamanie wierszy zamiast paska przewijania)
-        html += '<div style="width: 100%; max-width: 100%; overflow-x: hidden;">';
+        // Generowanie tabeli do okienka
+        let html = '<div style="width: 100%; max-width: 100%; overflow-x: hidden;">';
         html += '<table style="width:100%; border-collapse: collapse; text-align: left; table-layout: fixed;">';
         html += '<tr style="border-bottom: 1px solid #444;">';
         html += '<th style="width: 40%; padding-right: 5px;">Allegro (AI)</th>';
@@ -1979,12 +1987,11 @@ async function syncAllegroOrders() {
         html += '</tr>';
 
         soldGames.forEach((game, index) => {
-            // Próba sprytnego domyślnego dopasowania (jeśli część nazwy pasuje)
             let matchedTitle = "";
             for (let invTitle of currentInventory) {
                 if (invTitle.toLowerCase().includes(game.tytul.toLowerCase()) || game.tytul.toLowerCase().includes(invTitle.toLowerCase())) {
                     matchedTitle = invTitle;
-                    break; // Znaleziono pasującą grę!
+                    break;
                 }
             }
 
@@ -2001,7 +2008,7 @@ async function syncAllegroOrders() {
         html += '</table></div>';
 
         document.getElementById('allegro-review-list').innerHTML = html;
-        document.getElementById('allegro-review-modal').style.display = 'flex'; // Pokaż okienko
+        document.getElementById('allegro-review-modal').style.display = 'flex';
         if(statusEl) statusEl.innerText = "Status: Oczekiwanie na weryfikację użytkownika...";
 
     } catch (err) {
@@ -2065,6 +2072,8 @@ function confirmAllegroSync() {
             <h2 style="color: #00bcd4; margin-top: 0; margin-bottom: 10px;">🔎 Weryfikacja zamówień z AI</h2>
             <p style="margin: 0; color: #ccc; font-size: 14px;">Dopasuj nazwy z Allegro (lewa kolumna) do Twojego magazynu (prawa kolumna). Zacznij wpisywać nazwę w polu, aby przeszukać bazę. Pozostaw pole puste, aby <b>zignorować</b> pozycję.</p>
         </div>
+        
+        <datalist id="inventory-titles"></datalist>
         
         <div id="allegro-review-list" style="flex-grow: 1; overflow-y: auto; border-top: 1px solid #333; border-bottom: 1px solid #333; padding: 10px 0;">
             </div>
