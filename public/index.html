@@ -1997,15 +1997,26 @@ async function syncAllegroOrders() {
         try { soldGames = JSON.parse(aiResponse); } 
         catch (e) { alert("Błąd formatu. AI odpowiedziało:\n\n" + aiResponse.substring(0, 400)); return; }
 
-        // POBIERANIE TYTUŁÓW DO GLOBALNEJ BAZY
+        // --- UNIWERSALNY RADAR TABELI (Omija problem z brakującym ID) ---
         window.allegroInventoryTitles = [];
-        document.querySelectorAll('#inventory-body tr').forEach(row => {
-            let cell = row.cells[0];
-            if (!cell) return;
+        document.querySelectorAll('tr').forEach(row => {
+            // Ignorujemy wiersze z samego okienka weryfikacji
+            if (row.closest('#allegro-review-modal')) return;
+            
+            let cell = row.cells[0]; // Interesuje nas pierwsza kolumna
+            if (!cell || cell.tagName === 'TH') return; // Pomijamy nagłówki (TH)
+            
             let inputField = cell.querySelector('input');
             let title = inputField ? inputField.value.trim() : cell.innerText.trim();
-            if (title && title !== "") window.allegroInventoryTitles.push(title); 
+            
+            if (title && title !== "") {
+                window.allegroInventoryTitles.push(title); 
+            }
         });
+        
+        // Usuwamy ewentualne duplikaty, by lista była czysta
+        window.allegroInventoryTitles = [...new Set(window.allegroInventoryTitles)];
+        // ---------------------------------------------------------------
 
         let html = '<table style="width:100%; border-collapse: collapse; text-align: left;">';
         html += '<tr style="border-bottom: 1px solid #444;">';
@@ -2049,7 +2060,8 @@ async function syncAllegroOrders() {
 }
 
 function confirmAllegroSync() {
-    let rows = document.querySelectorAll('#inventory-body tr');
+    // --- Tutaj też uniwersalne szukanie, by na pewno odjął stan! ---
+    let rows = document.querySelectorAll('tr'); 
     let reviewDropdowns = document.querySelectorAll('[id^="allegro-match-"]');
     let updateMessage = "Zarejestrowano sprzedaż:\n";
     let historyBody = document.getElementById('history-body');
@@ -2062,13 +2074,17 @@ function confirmAllegroSync() {
         let matchFound = false;
 
         rows.forEach(row => {
+            if (row.closest('#allegro-review-modal')) return; // Zignoruj wiersze z okienka AI
+            
             let cell = row.cells[0];
+            if (!cell || cell.tagName === 'TH') return;
+            
             let inputField = cell.querySelector('input');
             let rowTitle = inputField ? inputField.value.trim() : cell.innerText.trim();
 
             if (rowTitle === selectedTitle) {
                 matchFound = true;
-                let stockCell = row.cells[2];
+                let stockCell = row.cells[2]; // Zmniejsza z 3 kolumny (Ilość)
                 let currentStock = parseInt(stockCell.innerText) || 0;
                 stockCell.innerText = Math.max(0, currentStock - qty);
                 updateMessage += `- ${selectedTitle}: -${qty} szt.\n`;
@@ -2081,7 +2097,7 @@ function confirmAllegroSync() {
             }
         });
 
-        if(!matchFound) updateMessage += `❌ UWAGA: Nie udało się odjąć "${selectedTitle}" - nie ma takiej gry w tabeli!\n`;
+        if(!matchFound) updateMessage += `❌ UWAGA: Nie udało się odjąć "${selectedTitle}" - nie ma takiej gry w tabeli głównej!\n`;
     });
 
     let processedOrders = JSON.parse(localStorage.getItem('processed_allegro_orders') || '[]');
