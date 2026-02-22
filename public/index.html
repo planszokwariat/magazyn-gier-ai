@@ -1730,11 +1730,11 @@
     // 1. Zapis lokalny działa zawsze
     localStorage.setItem(STORAGE_KEY, JSON.stringify(app.data));
     
-    // 2. BLOKADA: Jeśli system nie pobrał jeszcze chmury, zabraniamy nadpisywać!
+    // 2. BLOKADA: Czekamy na wczytanie chmury
     if (!window.cloudSyncReady) return;
 
-    // 3. Bezpieczne wysłanie do Firebase
-    fetch('https://magazyn-a31e4-default-rtdb.europe-west1.firebasedatabase.app/data.json', {
+    // 3. UWAGA: Zmieniony, poprawny link do głównego katalogu (/.json)
+    fetch('https://magazyn-a31e4-default-rtdb.europe-west1.firebasedatabase.app/.json', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(app.data)
@@ -1744,51 +1744,35 @@
 load: () => {
     window.cloudSyncReady = false; 
 
-    // 1. BŁYSKAWICZNY START (Rozwiązuje problem zawieszającej się strony!)
+    // 1. Szybkie wczytanie z dysku
     const str = localStorage.getItem(STORAGE_KEY);
     if(str) {
         app.data = JSON.parse(str);
         if(!app.data.clients) app.data.clients=[]; if(!app.data.games) app.data.games=[];
         if(!app.data.history) app.data.history=[]; if(!app.data.inventory) app.data.inventory=[];
-        window.cloudSyncReady = true; 
     } else {
-        // ZAWÓR BEZPIECZEŃSTWA: Jeśli to nowy komputer, ładujemy puste struktury, by system "nie wybuchł"
-        app.data = {
-            warehouses: ['Magazyn', 'Sklep', 'Kolekcja'],
-            clients: [], publishers: [], games: [], history: [], inventory: []
-        };
+        app.data = { warehouses: ['Magazyn', 'Sklep', 'Kolekcja'], clients: [], publishers: [], games: [], history: [], inventory: [] };
     }
     
-    // 2. BEZPIECZNE POBIERANIE W TLE
-    fetch('https://magazyn-a31e4-default-rtdb.europe-west1.firebasedatabase.app/data.json')
+    // 2. Pobieranie z POPRAWNEGO linku
+    fetch('https://magazyn-a31e4-default-rtdb.europe-west1.firebasedatabase.app/.json')
         .then(res => res.json())
         .then(cloudData => {
-            // Jeśli chmura jest pełna gier
+            // Jeśli w chmurze są fizycznie załadowane Twoje gry...
             if (cloudData && cloudData.games && cloudData.games.length > 0) {
-                // Zabezpieczenie brakujących tablic z chmury
-                if(!cloudData.clients) cloudData.clients=[]; 
-                if(!cloudData.games) cloudData.games=[];
-                if(!cloudData.history) cloudData.history=[]; 
-                if(!cloudData.inventory) cloudData.inventory=[];
-
-                const cloudString = JSON.stringify(cloudData);
                 
-                if (!str) {
-                    // Czysty komputer - nadpisujemy dysk twardy chmurą i odświeżamy tabelę
-                    localStorage.setItem(STORAGE_KEY, cloudString);
+                // Jeśli Twój aktualny komputer jest "pusty" (ma 0 gier) -> zassij chmurę i odśwież stronę
+                if (app.data.games.length === 0) {
+                    console.log("Znaleziono bazę w chmurze! Aktualizuję system...");
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(cloudData));
                     window.cloudSyncReady = true;
                     location.reload(); 
-                } else if (cloudString !== str && !sessionStorage.getItem('cloud_synced')) {
-                    // Tryb hybrydowy - jeśli chmura ma nowe gry, pobierz raz (blokada pętli reloadu)
-                    sessionStorage.setItem('cloud_synced', 'true');
-                    localStorage.setItem(STORAGE_KEY, cloudString);
-                    window.cloudSyncReady = true;
-                    location.reload();
                 } else {
-                    window.cloudSyncReady = true; // Zgodność - zdejmujemy blokadę zapisu
+                    // Komputer ma już gry, po prostu zdejmij blokadę zapisu
+                    window.cloudSyncReady = true;
                 }
             } else {
-                window.cloudSyncReady = true; // Chmura pusta, zdejmujemy blokadę
+                window.cloudSyncReady = true;
             }
         })
         .catch(err => {
