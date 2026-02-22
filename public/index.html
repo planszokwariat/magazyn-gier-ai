@@ -1917,7 +1917,51 @@
         }
 
         let pendingAllegroOrdersIds = []; // Globalna pamięć na nowe ID zamówień
+window.allegroInventoryTitles = []; // Globalna pamięć dla tytułów z magazynu
 
+// 1. NASZA WŁASNA WYSZUKIWARKA (Zastępuje problematyczny datalist)
+function filterAllegroDropdown(index) {
+    let input = document.getElementById(`allegro-match-${index}`);
+    let dropdown = document.getElementById(`allegro-dropdown-${index}`);
+    let filter = input.value.toLowerCase();
+    
+    dropdown.innerHTML = "";
+    let hasMatches = false;
+
+    window.allegroInventoryTitles.forEach(title => {
+        if (title.toLowerCase().includes(filter)) {
+            hasMatches = true;
+            let div = document.createElement("div");
+            div.innerText = title;
+            div.style.padding = "10px";
+            div.style.cursor = "pointer";
+            div.style.borderBottom = "1px solid #444";
+            div.style.color = "white";
+            
+            // Efekt podświetlenia po najechaniu myszką
+            div.onmouseover = function() { this.style.backgroundColor = "#00bcd4"; this.style.color = "black"; };
+            div.onmouseout = function() { this.style.backgroundColor = "transparent"; this.style.color = "white"; };
+            
+            // Po kliknięciu wkleja tytuł do pola i zamyka listę
+            div.onclick = function() {
+                input.value = title;
+                dropdown.style.display = "none";
+            };
+            dropdown.appendChild(div);
+        }
+    });
+
+    dropdown.style.display = hasMatches ? "block" : "none";
+}
+
+// 2. Zamknięcie listy podpowiedzi, jeśli klikniesz gdzieś obok
+document.addEventListener("click", function(e) {
+    if (e.target.tagName !== "INPUT") {
+        document.querySelectorAll('[id^="allegro-dropdown-"]').forEach(d => d.style.display = "none");
+    }
+});
+
+// 3. ZAKTUALIZOWANA FUNKCJA GŁÓWNA
 async function syncAllegroOrders() {
     const token = localStorage.getItem('allegro_token');
     const statusEl = document.getElementById('allegro-status');
@@ -1947,49 +1991,34 @@ async function syncAllegroOrders() {
         try {
             soldGames = JSON.parse(aiResponse);
         } catch (e) {
-            // TUTAJ JEST ZMIANA: Skrypt wyrzuci na ekran dokładną odpowiedź od Agenta
-            alert("Błąd formatu. AI zamiast danych, odpowiedziało to:\n\n" + aiResponse.substring(0, 400));
-            if(statusEl) statusEl.innerText = "Status: ❌ Błąd formatu AI";
+            alert("Błąd formatu. AI odpowiedziało:\n\n" + aiResponse.substring(0, 400));
             return;
         }
 
-        // POBIERANIE TYTUŁÓW Z TABELI
-        let currentInventory = [];
+        // POBIERANIE TYTUŁÓW DO GLOBALNEJ BAZY
+        window.allegroInventoryTitles = [];
         document.querySelectorAll('#inventory-body tr').forEach(row => {
             let cell = row.cells[0];
             if (!cell) return;
             let inputField = cell.querySelector('input');
             let title = inputField ? inputField.value.trim() : cell.innerText.trim();
             if (title && title !== "") {
-                currentInventory.push(title); 
+                window.allegroInventoryTitles.push(title); 
             }
         });
 
-        // TWORZENIE BAZY PODPOWIEDZI (Doklejamy do body)
-        let oldDatalist = document.getElementById('inventory-titles');
-        if (oldDatalist) oldDatalist.remove();
-        
-        let datalist = document.createElement('datalist');
-        datalist.id = 'inventory-titles';
-        currentInventory.forEach(invTitle => {
-            let option = document.createElement('option');
-            option.value = invTitle;
-            datalist.appendChild(option);
-        });
-        document.body.appendChild(datalist); 
-
-        // Generowanie tabeli do okienka
-        let html = '<div style="width: 100%; overflow-x: auto;">';
+        // GENEROWANIE TABELI
+        let html = '<div style="width: 100%; overflow-x: visible;">'; // Musi być visible, żeby listy nie były ucinane!
         html += '<table style="width:100%; border-collapse: collapse; text-align: left; min-width: 500px;">';
         html += '<tr style="border-bottom: 1px solid #444;">';
-        html += '<th style="width: 45%; padding: 5px;">Allegro (AI)</th>';
-        html += '<th style="width: 10%; text-align: center;">Szt.</th>';
+        html += '<th style="width: 40%; padding: 5px;">Allegro (AI)</th>';
+        html += '<th style="width: 15%; text-align: center;">Szt.</th>';
         html += '<th style="width: 45%; padding: 5px;">Znajdź w magazynie</th>';
         html += '</tr>';
 
         soldGames.forEach((game, index) => {
             let matchedTitle = "";
-            for (let invTitle of currentInventory) {
+            for (let invTitle of window.allegroInventoryTitles) {
                 if (invTitle.toLowerCase().includes(game.tytul.toLowerCase()) || game.tytul.toLowerCase().includes(invTitle.toLowerCase())) {
                     matchedTitle = invTitle;
                     break;
@@ -1999,10 +2028,15 @@ async function syncAllegroOrders() {
             html += `<tr style="border-bottom: 1px solid #444;">
                 <td style="padding: 10px 5px; font-size: 14px; color: #ccc;">${game.tytul}</td>
                 <td id="allegro-qty-${index}" style="font-weight: bold; color: #ffb74d; text-align: center;">${game.ilosc}</td>
-                <td style="padding: 10px 5px;">
-                    <input type="text" list="inventory-titles" id="allegro-match-${index}" value="${matchedTitle}" 
-                    placeholder="Wpisz nazwę..." 
+                <td style="padding: 10px 5px; position: relative;">
+                    
+                    <input type="text" id="allegro-match-${index}" value="${matchedTitle}" 
+                    placeholder="Wpisz nazwę (puste=Ignoruj)" autocomplete="off"
+                    oninput="filterAllegroDropdown(${index})" onfocus="filterAllegroDropdown(${index})"
                     style="width: 100%; box-sizing: border-box; padding: 8px; background: #2d2d2d; color: white; border: 1px solid #444; border-radius: 4px; font-size: 14px;">
+                    
+                    <div id="allegro-dropdown-${index}" style="display: none; position: absolute; top: 100%; left: 5px; right: 5px; background: #333; border: 1px solid #00bcd4; max-height: 200px; overflow-y: auto; z-index: 99999; box-shadow: 0px 4px 10px rgba(0,0,0,0.8); border-radius: 0 0 4px 4px;"></div>
+                
                 </td>
             </tr>`;
         });
