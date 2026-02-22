@@ -1726,7 +1726,17 @@
             },
 
             io: {
-                save: () => localStorage.setItem(STORAGE_KEY, JSON.stringify(app.data)),
+                save: () => {
+    // 1. Natychmiastowy zapis lokalny (strona działa szybko jak dawniej)
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(app.data));
+    
+    // 2. Magia chmury: Wysłanie kopii do Firebase w tle
+    fetch('https://magazyn-a31e4-default-rtdb.europe-west1.firebasedatabase.app/data.json', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(app.data)
+    }).catch(err => console.error("Błąd synchronizacji z chmurą:", err));
+},
                 load: () => {
                     const str = localStorage.getItem(STORAGE_KEY);
                     if(str) {
