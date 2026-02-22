@@ -1997,14 +1997,14 @@ async function syncAllegroOrders() {
         try { soldGames = JSON.parse(aiResponse); } 
         catch (e) { alert("Błąd formatu. AI odpowiedziało:\n\n" + aiResponse.substring(0, 400)); return; }
 
-        // --- UNIWERSALNY RADAR TABELI (Omija problem z brakującym ID) ---
+        // --- POPRAWIONY RADAR: TERAZ PATRZY NA KOLUMNĘ "TYTUŁ" ---
         window.allegroInventoryTitles = [];
         document.querySelectorAll('tr').forEach(row => {
-            // Ignorujemy wiersze z samego okienka weryfikacji
-            if (row.closest('#allegro-review-modal')) return;
+            // Ignorujemy wiersze okienka AI oraz nagłówki tabeli
+            if (row.closest('#allegro-review-modal') || !row.cells[1] || row.cells[1].tagName === 'TH') return;
             
-            let cell = row.cells[0]; // Interesuje nas pierwsza kolumna
-            if (!cell || cell.tagName === 'TH') return; // Pomijamy nagłówki (TH)
+            // ZMIANA: Pobieramy dane z DRUGIEJ kolumny (indeks 1), gdzie są Tytuły
+            let cell = row.cells[1]; 
             
             let inputField = cell.querySelector('input');
             let title = inputField ? inputField.value.trim() : cell.innerText.trim();
@@ -2014,9 +2014,7 @@ async function syncAllegroOrders() {
             }
         });
         
-        // Usuwamy ewentualne duplikaty, by lista była czysta
         window.allegroInventoryTitles = [...new Set(window.allegroInventoryTitles)];
-        // ---------------------------------------------------------------
 
         let html = '<table style="width:100%; border-collapse: collapse; text-align: left;">';
         html += '<tr style="border-bottom: 1px solid #444;">';
@@ -2060,7 +2058,6 @@ async function syncAllegroOrders() {
 }
 
 function confirmAllegroSync() {
-    // --- Tutaj też uniwersalne szukanie, by na pewno odjął stan! ---
     let rows = document.querySelectorAll('tr'); 
     let reviewDropdowns = document.querySelectorAll('[id^="allegro-match-"]');
     let updateMessage = "Zarejestrowano sprzedaż:\n";
@@ -2074,17 +2071,19 @@ function confirmAllegroSync() {
         let matchFound = false;
 
         rows.forEach(row => {
-            if (row.closest('#allegro-review-modal')) return; // Zignoruj wiersze z okienka AI
+            // Ignorujemy wiersze okienka AI oraz nagłówki tabeli
+            if (row.closest('#allegro-review-modal') || !row.cells[1] || row.cells[1].tagName === 'TH') return;
             
-            let cell = row.cells[0];
-            if (!cell || cell.tagName === 'TH') return;
+            // ZMIANA: Porównujemy wybrany tytuł z DRUGĄ kolumną tabeli
+            let cell = row.cells[1];
             
             let inputField = cell.querySelector('input');
             let rowTitle = inputField ? inputField.value.trim() : cell.innerText.trim();
 
             if (rowTitle === selectedTitle) {
                 matchFound = true;
-                let stockCell = row.cells[2]; // Zmniejsza z 3 kolumny (Ilość)
+                // ZMIANA: Ilość jest w PIĄTEJ kolumnie (indeks 4)
+                let stockCell = row.cells[4]; 
                 let currentStock = parseInt(stockCell.innerText) || 0;
                 stockCell.innerText = Math.max(0, currentStock - qty);
                 updateMessage += `- ${selectedTitle}: -${qty} szt.\n`;
