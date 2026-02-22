@@ -1,19 +1,19 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 exports.handler = async (event) => {
-    // Pobranie klucza
+    // Sprawdzenie czy klucz w ogóle dotarł do funkcji
+    if (!process.env.GEMINI_API_KEY) {
+        return { statusCode: 500, body: JSON.stringify({ answer: "Błąd: Brak klucza GEMINI_API_KEY w ustawieniach Netlify!" }) };
+    }
+
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     
-    // ZMIANA: Przechodzimy na sprawdzony model gemini-pro
-    // Używamy prostej nazwy bez prefiksów
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-
     try {
+        // Najbezpieczniejsze wywołanie modelu gemini-1.5-flash
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
         const body = JSON.parse(event.body);
-        
-        const prompt = `Jesteś asystentem magazyniera gier planszowych. 
-        Analizuj dane JSON z Allegro: ${body.text}.
-        Wypisz krótko: Tytuł gry i ilość sztuk.`;
+        const prompt = `Jesteś asystentem magazyniera. Na podstawie tych danych z Allegro (JSON): ${body.text} wypisz tylko listę gier i ich ilości.`;
 
         const result = await model.generateContent(prompt);
         const response = await result.response;
@@ -23,7 +23,7 @@ exports.handler = async (event) => {
             body: JSON.stringify({ answer: response.text() })
         };
     } catch (error) {
-        console.error("Błąd:", error);
+        console.error("Błąd szczegółowy Agenta:", error);
         return {
             statusCode: 500,
             body: JSON.stringify({ answer: "Błąd Agenta: " + error.message })
