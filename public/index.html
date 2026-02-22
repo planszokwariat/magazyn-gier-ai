@@ -1951,39 +1951,38 @@ async function syncAllegroOrders() {
             return;
         }
 
-        // --- NAPRAWIONE CZYTANIE MAGAZYNU ---
+        // POBIERANIE TYTUŁÓW Z TABELI
         let currentInventory = [];
         document.querySelectorAll('#inventory-body tr').forEach(row => {
             let cell = row.cells[0];
             if (!cell) return;
-            
-            // Sprawdzamy, czy nazwa gry jest w polu <input> czy jako zwykły tekst
             let inputField = cell.querySelector('input');
             let title = inputField ? inputField.value.trim() : cell.innerText.trim();
-            
             if (title && title !== "") {
                 currentInventory.push(title); 
             }
         });
 
-        // Wypełnianie bazy podpowiedzi (Datalist) bezpośrednio w HTML
-        let datalist = document.getElementById('inventory-titles');
-        if (datalist) {
-            datalist.innerHTML = ''; // Czyścimy starą bazę
-            currentInventory.forEach(invTitle => {
-                let option = document.createElement('option');
-                option.value = invTitle;
-                datalist.appendChild(option);
-            });
-        }
+        // TWORZENIE BAZY PODPOWIEDZI (Doklejamy do body, co naprawia błąd wyszukiwarki!)
+        let oldDatalist = document.getElementById('inventory-titles');
+        if (oldDatalist) oldDatalist.remove();
+        
+        let datalist = document.createElement('datalist');
+        datalist.id = 'inventory-titles';
+        currentInventory.forEach(invTitle => {
+            let option = document.createElement('option');
+            option.value = invTitle;
+            datalist.appendChild(option);
+        });
+        document.body.appendChild(datalist); 
 
         // Generowanie tabeli do okienka
-        let html = '<div style="width: 100%; max-width: 100%; overflow-x: hidden;">';
-        html += '<table style="width:100%; border-collapse: collapse; text-align: left; table-layout: fixed;">';
+        let html = '<div style="width: 100%; overflow-x: auto;">';
+        html += '<table style="width:100%; border-collapse: collapse; text-align: left; min-width: 500px;">';
         html += '<tr style="border-bottom: 1px solid #444;">';
-        html += '<th style="width: 40%; padding-right: 5px;">Allegro (AI)</th>';
-        html += '<th style="width: 15%; text-align: center;">Szt.</th>';
-        html += '<th style="width: 45%;">Znajdź w magazynie</th>';
+        html += '<th style="width: 45%; padding: 5px;">Allegro (AI)</th>';
+        html += '<th style="width: 10%; text-align: center;">Szt.</th>';
+        html += '<th style="width: 45%; padding: 5px;">Znajdź w magazynie</th>';
         html += '</tr>';
 
         soldGames.forEach((game, index) => {
@@ -1996,11 +1995,11 @@ async function syncAllegroOrders() {
             }
 
             html += `<tr style="border-bottom: 1px solid #444;">
-                <td style="padding: 10px 5px 10px 0; word-wrap: break-word; font-size: 14px; color: #ccc;">${game.tytul}</td>
+                <td style="padding: 10px 5px; font-size: 14px; color: #ccc;">${game.tytul}</td>
                 <td id="allegro-qty-${index}" style="font-weight: bold; color: #ffb74d; text-align: center;">${game.ilosc}</td>
-                <td style="padding: 10px 0;">
+                <td style="padding: 10px 5px;">
                     <input type="text" list="inventory-titles" id="allegro-match-${index}" value="${matchedTitle}" 
-                    placeholder="Wpisz nazwę (puste=Ignoruj)" 
+                    placeholder="Wpisz nazwę..." 
                     style="width: 100%; box-sizing: border-box; padding: 8px; background: #2d2d2d; color: white; border: 1px solid #444; border-radius: 4px; font-size: 14px;">
                 </td>
             </tr>`;
@@ -2017,27 +2016,31 @@ async function syncAllegroOrders() {
     }
 }
 
-// Funkcja uruchamiana po kliknięciu "Zatwierdź" w okienku Bufora
 function confirmAllegroSync() {
     let rows = document.querySelectorAll('#inventory-body tr');
     let reviewDropdowns = document.querySelectorAll('[id^="allegro-match-"]');
     let updateMessage = "Zarejestrowano sprzedaż:\n";
-    let historyBody = document.getElementById('history-body'); // Zakładam, że masz taką tabelę w HTML
+    let historyBody = document.getElementById('history-body');
 
     reviewDropdowns.forEach((dropdown, index) => {
-        let selectedTitle = dropdown.value;
-        if (!selectedTitle) return; // Jeśli wybrałeś "Ignoruj", pomijamy
+        let selectedTitle = dropdown.value.trim();
+        if (!selectedTitle) return; // Ignoruj jeśli puste
 
         let qty = parseInt(document.getElementById(`allegro-qty-${index}`).innerText);
+        let matchFound = false;
 
         rows.forEach(row => {
-            if (row.cells[0].innerText === selectedTitle) {
+            let cell = row.cells[0];
+            let inputField = cell.querySelector('input');
+            let rowTitle = inputField ? inputField.value.trim() : cell.innerText.trim();
+
+            if (rowTitle === selectedTitle) {
+                matchFound = true;
                 let stockCell = row.cells[2];
                 let currentStock = parseInt(stockCell.innerText) || 0;
                 stockCell.innerText = Math.max(0, currentStock - qty);
                 updateMessage += `- ${selectedTitle}: -${qty} szt.\n`;
 
-                // REJESTRACJA W HISTORII
                 if (historyBody) {
                     let d = new Date().toLocaleString('pl-PL');
                     let newHistoryRow = `<tr style="color: #ffb74d;">
@@ -2050,35 +2053,36 @@ function confirmAllegroSync() {
                 }
             }
         });
+
+        if(!matchFound) {
+            updateMessage += `❌ UWAGA: Nie udało się odjąć "${selectedTitle}" - nie ma takiej gry w tabeli!\n`;
+        }
     });
 
-    // Zapisujemy, że te zamówienia zostały pomyślnie przetworzone, żeby nie dublować
     let processedOrders = JSON.parse(localStorage.getItem('processed_allegro_orders') || '[]');
     processedOrders = processedOrders.concat(pendingAllegroOrdersIds);
     localStorage.setItem('processed_allegro_orders', JSON.stringify(processedOrders));
 
-    saveData(); // Zapisujemy stany do localStorage
+    saveData(); 
     document.getElementById('allegro-review-modal').style.display = 'none';
     
     alert(updateMessage);
     document.getElementById('allegro-status').innerText = "Status: ✅ Synchronizacja i rejestracja zakończona";
 }
-    </script>
+</script>
 
 <div id="allegro-review-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center;">
-    <div style="background: #1e1e1e; padding: 20px; border-radius: 12px; border: 2px solid #00bcd4; width: 90%; max-width: 800px; color: white; height: 85vh; display: flex; flex-direction: column;">
+    <div style="background: #1e1e1e; padding: 20px; border-radius: 12px; border: 2px solid #00bcd4; width: 95%; max-width: 800px; color: white; position: relative; max-height: 90vh;">
         
-        <div style="flex-shrink: 0; margin-bottom: 15px;">
+        <div style="margin-bottom: 15px;">
             <h2 style="color: #00bcd4; margin-top: 0; margin-bottom: 10px;">🔎 Weryfikacja zamówień z AI</h2>
             <p style="margin: 0; color: #ccc; font-size: 14px;">Dopasuj nazwy z Allegro (lewa kolumna) do Twojego magazynu (prawa kolumna). Zacznij wpisywać nazwę w polu, aby przeszukać bazę. Pozostaw pole puste, aby <b>zignorować</b> pozycję.</p>
         </div>
         
-        <datalist id="inventory-titles"></datalist>
-        
-        <div id="allegro-review-list" style="flex-grow: 1; overflow-y: auto; border-top: 1px solid #333; border-bottom: 1px solid #333; padding: 10px 0;">
-            </div>
+        <div id="allegro-review-list" style="max-height: 55vh; overflow-y: auto; border-top: 1px solid #333; border-bottom: 1px solid #333; padding: 10px 0;">
+        </div>
 
-        <div style="margin-top: 15px; text-align: right; flex-shrink: 0;">
+        <div style="margin-top: 15px; text-align: right;">
             <button onclick="document.getElementById('allegro-review-modal').style.display='none'" style="background: #ff5252; color: white; padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 14px;">Odrzuć i Zamknij</button>
             <button onclick="confirmAllegroSync()" style="background: #4CAF50; color: white; padding: 12px 24px; border: none; border-radius: 6px; margin-left: 10px; cursor: pointer; font-weight: bold; font-size: 14px;">Zatwierdź i Rejestruj Sprzedaż</button>
         </div>
