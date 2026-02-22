@@ -1924,7 +1924,7 @@ async function syncAllegroOrders() {
     statusEl.innerText = "Status: Pobieranie zamówień...";
     
     try {
-        const response = await fetch('/.netlify/functions/allegro-sync', {
+        const response = await fetch('/.netlify/functions/allegro-auth', { method: 'POST' });
             headers: { 'Authorization': token }
         });
         const data = await response.json();
