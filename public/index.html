@@ -1860,12 +1860,7 @@
 
         app.init();
         window.app = app; 
-    </script>
-    // ... (koniec Twojego oryginalnego kodu programu)
-        app.init();
-        window.app = app;
-
-        // Funkcja wysyłająca dane do Twojego Agenta AI na Netlify
+    // Funkcja komunikacji z Agentem AI
         async function askAgent(textData, mode = 'general') {
             try {
                 const response = await fetch('/.netlify/functions/agent', {
@@ -1873,15 +1868,14 @@
                     body: JSON.stringify({ text: textData, mode: mode })
                 });
                 const result = await response.json();
-                console.log("Odpowiedź Agenta:", result.answer);
                 return result.answer;
             } catch (error) {
                 console.error("Błąd Agenta:", error);
             }
         }
 
-        // --- NOWY KOD LOGOWANIA ALLEGRO ---
-        const ALLEGRO_CLIENT_ID = '8f33f9c35dc94b1baef53092b74d8206'; // Wpisz tu swój ID!
+        // Logowanie do Allegro - WPISZ SWÓJ CLIENT ID PONIŻEJ
+        const ALLEGRO_CLIENT_ID = '8f33f9c35dc94b1baef53092b74d8206'; 
 
         async function loginToAllegro() {
             const statusEl = document.getElementById('allegro-status');
@@ -1892,14 +1886,13 @@
                 const data = await response.json();
 
                 if (data.user_code) {
-                    alert(`Twój kod powiązania to: ${data.user_code}\nKliknij OK, aby przejść do Allegro i wkleić kod.`);
+                    alert(`Twój kod powiązania to: ${data.user_code}\nKliknij OK, aby przejść do Allegro.`);
                     window.open(data.verification_uri, '_blank');
                     if(statusEl) statusEl.innerHTML = `Wpisz kod <b>${data.user_code}</b> na Allegro.`;
                     document.getElementById('btn-allegro-sync').style.display = 'inline-block';
                 }
             } catch (err) {
                 if(statusEl) statusEl.innerText = "Błąd: Nie udało się połączyć.";
-                console.error(err);
             }
         }
     </script>
