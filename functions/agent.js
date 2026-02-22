@@ -4,25 +4,25 @@ exports.handler = async (event) => {
     const apiKey = process.env.GEMINI_API_KEY;
     
     if (!apiKey) {
-        return { statusCode: 500, body: JSON.stringify({ answer: "Błąd: Brak klucza API" }) };
+        return { statusCode: 500, body: JSON.stringify({ answer: "Błąd: Brak klucza API w ustawieniach Netlify!" }) };
     }
 
     try {
-        // DIAGNOSTYKA: Pytamy API Google, jakie modele są dla Ciebie odblokowane
-        const response = await axios.get(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
-        
-        // Wyciągamy z odpowiedzi same nazwy modeli
-        const availableModels = response.data.models.map(m => m.name).join(", ");
+        const body = JSON.parse(event.body);
+        const promptText = `Jesteś asystentem magazynu gier planszowych. Przeanalizuj dane JSON z Allegro: ${body.text}. Wypisz w punktach: tytuł gry i ilość sztuk. Odpowiadaj krótko.`;
 
-        return { 
-            statusCode: 200, 
-            body: JSON.stringify({ answer: "MODELE DOSTĘPNE DLA TWOJEGO KLUCZA: " + availableModels }) 
-        };
+        // UŻYWAMY MODELU, KTÓRY JEST DOSTĘPNY DLA TWOJEGO KLUCZA: gemini-2.5-flash
+        const response = await axios.post(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+            { contents: [{ parts: [{ text: promptText }] }] },
+            { headers: { 'Content-Type': 'application/json' } }
+        );
+
+        const textAnswer = response.data.candidates[0].content.parts[0].text;
+
+        return { statusCode: 200, body: JSON.stringify({ answer: textAnswer }) };
     } catch (error) {
         const errorDetails = error.response ? JSON.stringify(error.response.data) : error.message;
-        return { 
-            statusCode: 500, 
-            body: JSON.stringify({ answer: "Błąd Diagnostyki: " + errorDetails }) 
-        };
+        return { statusCode: 500, body: JSON.stringify({ answer: "Błąd Agenta: " + errorDetails }) };
     }
 };
