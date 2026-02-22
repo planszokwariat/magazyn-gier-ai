@@ -1916,91 +1916,139 @@
             }, 5000);
         }
 
-        async function syncAllegroOrders() {
+        let pendingAllegroOrdersIds = []; // Globalna pamięć na nowe ID zamówień
+
+async function syncAllegroOrders() {
     const token = localStorage.getItem('allegro_token');
     const statusEl = document.getElementById('allegro-status');
-    if(statusEl) statusEl.innerText = "Status: Pobieranie i analiza zamówień przez AI...";
+    if(statusEl) statusEl.innerText = "Status: AI analizuje zamówienia...";
 
     try {
-        // 1. Pobieramy wszystkie ostatnie zamówienia z Allegro
         const response = await fetch('/.netlify/functions/allegro-sync', {
             headers: { 'Authorization': token }
         });
         const data = await response.json();
         
-        // 2. FILTROWANIE DUPLIKATÓW (Zabezpieczenie)
-        let checkoutForms = data.checkoutForms || []; // Tablica zamówień
-        
-        // Wyciągamy z pamięci przeglądarki listę ID zamówień już pobranych (lub tworzymy pustą listę)
+        let checkoutForms = data.checkoutForms || [];
         let processedOrders = JSON.parse(localStorage.getItem('processed_allegro_orders') || '[]');
-        
-        // Wybieramy TYLKO te zamówienia, których ID nie ma jeszcze na naszej liście
         let newOrders = checkoutForms.filter(order => !processedOrders.includes(order.id));
 
-        // Jeśli nie ma nic nowego, kończymy pracę
         if (newOrders.length === 0) {
-            alert("Brak nowych zamówień z Allegro. Wszystkie zostały już zaktualizowane w magazynie.");
+            alert("Brak nowych zamówień do przetworzenia.");
             if(statusEl) statusEl.innerText = "Status: ✅ Brak nowych zamówień";
             return;
         }
 
-        // 3. Wysyłamy do Agenta AI TYLKO NOWE zamówienia (oszczędza to też limity w Google)
+        // Zapisujemy ID do późniejszego zatwierdzenia
+        pendingAllegroOrdersIds = newOrders.map(o => o.id);
+
         const aiResponse = await askAgent(JSON.stringify(newOrders), 'allegro_sync');
         
-        // 4. Przetwarzamy odpowiedź od AI na format kodu
         let soldGames = [];
         try {
             soldGames = JSON.parse(aiResponse);
         } catch (e) {
-            console.error("AI nie zwróciło poprawnego JSONa:", aiResponse);
-            alert("Błąd: AI nie zwróciło danych w odpowiednim formacie.");
-            if(statusEl) statusEl.innerText = "Status: Błąd parsowania danych od AI";
+            alert("Błąd: AI nie zwróciło poprawnego formatu.");
             return;
         }
 
-        // 5. LOGIKA ODEJMOWANIA ZE STANU MAGAZYNOWEGO
-        let updateMessage = "Agent AI przetworzył nowe zamówienia:\n\n";
-        let tableRows = document.querySelectorAll('#inventory-body tr');
-
-        soldGames.forEach(soldGame => {
-            let gameFound = false;
-            
-            tableRows.forEach(row => {
-                let titleCell = row.cells[0].innerText.toLowerCase();
-                let stockCell = row.cells[2];
-                
-                if (titleCell.includes(soldGame.tytul.toLowerCase())) {
-                    let currentStock = parseInt(stockCell.innerText) || 0;
-                    let newStock = currentStock - soldGame.ilosc;
-                    
-                    stockCell.innerText = newStock < 0 ? 0 : newStock; 
-                    updateMessage += `✅ ${soldGame.tytul}: Zmniejszono stan o ${soldGame.ilosc} szt.\n`;
-                    gameFound = true;
-                }
-            });
-
-            if (!gameFound) {
-                updateMessage += `❌ ${soldGame.tytul}: Nie znaleziono takiej gry w tabeli!\n`;
-            }
+        // TWORZENIE WIDOKU BUFORA
+        // Pobieramy aktualne tytuły z Twojej bazy, żeby zrobić z nich listę rozwijaną
+        let currentInventory = [];
+        document.querySelectorAll('#inventory-body tr').forEach(row => {
+            currentInventory.push(row.cells[0].innerText); 
         });
 
-        // 6. ZAPISYWANIE NOWYCH ZAMÓWIEŃ DO "ZESZYTU"
-        // Dopiero gdy gry zejdą ze stanu, dodajemy ID tych zamówień do zapisanych
-        newOrders.forEach(order => processedOrders.push(order.id));
-        localStorage.setItem('processed_allegro_orders', JSON.stringify(processedOrders));
+        let html = '<table style="width:100%; border-collapse: collapse; text-align: left;">';
+        html += '<tr style="border-bottom: 1px solid #444;"><th>Tytuł wg AI (Allegro)</th><th>Ilość</th><th>Wybierz produkt z magazynu</th></tr>';
 
-        // 7. Powiadomienie o sukcesie
-        alert(updateMessage);
-        if(statusEl) statusEl.innerText = "Status: ✅ Synchronizacja zakończona pomyślnie";
-        
-        // Zapis stanu do LocalStorage
-        saveData(); 
+        soldGames.forEach((game, index) => {
+            let options = '<option value="">-- Ignoruj to zamówienie --</option>';
+            currentInventory.forEach(invTitle => {
+                // Próba automatycznego domyślnego dopasowania, jeśli nazwy są podobne
+                let isSelected = invTitle.toLowerCase().includes(game.tytul.toLowerCase()) ? 'selected' : '';
+                options += `<option value="${invTitle}" ${isSelected}>${invTitle}</option>`;
+            });
+
+            html += `<tr style="border-bottom: 1px solid #444;">
+                <td style="padding: 10px 0;">${game.tytul}</td>
+                <td id="allegro-qty-${index}" style="font-weight: bold; color: #ffb74d;">${game.ilosc}</td>
+                <td><select id="allegro-match-${index}" style="width: 100%; padding: 5px; background: #2d2d2d; color: white; border: 1px solid #444;">${options}</select></td>
+            </tr>`;
+        });
+        html += '</table>';
+
+        document.getElementById('allegro-review-list').innerHTML = html;
+        document.getElementById('allegro-review-modal').style.display = 'flex'; // Pokaż okienko
+        if(statusEl) statusEl.innerText = "Status: Oczekiwanie na weryfikację użytkownika...";
 
     } catch (err) {
         console.error(err);
-        if(statusEl) statusEl.innerText = "Błąd komunikacji z serwerem.";
+        if(statusEl) statusEl.innerText = "Błąd pobierania.";
     }
 }
+
+// Funkcja uruchamiana po kliknięciu "Zatwierdź" w okienku Bufora
+function confirmAllegroSync() {
+    let rows = document.querySelectorAll('#inventory-body tr');
+    let reviewDropdowns = document.querySelectorAll('[id^="allegro-match-"]');
+    let updateMessage = "Zarejestrowano sprzedaż:\n";
+    let historyBody = document.getElementById('history-body'); // Zakładam, że masz taką tabelę w HTML
+
+    reviewDropdowns.forEach((dropdown, index) => {
+        let selectedTitle = dropdown.value;
+        if (!selectedTitle) return; // Jeśli wybrałeś "Ignoruj", pomijamy
+
+        let qty = parseInt(document.getElementById(`allegro-qty-${index}`).innerText);
+
+        rows.forEach(row => {
+            if (row.cells[0].innerText === selectedTitle) {
+                let stockCell = row.cells[2];
+                let currentStock = parseInt(stockCell.innerText) || 0;
+                stockCell.innerText = Math.max(0, currentStock - qty);
+                updateMessage += `- ${selectedTitle}: -${qty} szt.\n`;
+
+                // REJESTRACJA W HISTORII
+                if (historyBody) {
+                    let d = new Date().toLocaleString('pl-PL');
+                    let newHistoryRow = `<tr style="color: #ffb74d;">
+                        <td>${d}</td>
+                        <td>Sprzedaż (Allegro)</td>
+                        <td>${selectedTitle}</td>
+                        <td>-${qty}</td>
+                    </tr>`;
+                    historyBody.innerHTML = newHistoryRow + historyBody.innerHTML;
+                }
+            }
+        });
+    });
+
+    // Zapisujemy, że te zamówienia zostały pomyślnie przetworzone, żeby nie dublować
+    let processedOrders = JSON.parse(localStorage.getItem('processed_allegro_orders') || '[]');
+    processedOrders = processedOrders.concat(pendingAllegroOrdersIds);
+    localStorage.setItem('processed_allegro_orders', JSON.stringify(processedOrders));
+
+    saveData(); // Zapisujemy stany do localStorage
+    document.getElementById('allegro-review-modal').style.display = 'none';
+    
+    alert(updateMessage);
+    document.getElementById('allegro-status').innerText = "Status: ✅ Synchronizacja i rejestracja zakończona";
+}
+}
     </script>
+    <div id="allegro-review-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center;">
+    <div style="background: #1e1e1e; padding: 20px; border-radius: 12px; border: 2px solid #00bcd4; width: 90%; max-width: 700px; color: white; max-height: 80vh; overflow-y: auto;">
+        <h2 style="color: #00bcd4; margin-top: 0;">🔎 Weryfikacja zamówień z AI</h2>
+        <p>AI przeanalizowało zamówienia. Dopasuj nazwy z Allegro do produktów w Twoim magazynie. Jeśli czegoś nie chcesz dodawać, wybierz "Ignoruj".</p>
+        
+        <div id="allegro-review-list">
+            </div>
+
+        <div style="margin-top: 20px; text-align: right;">
+            <button onclick="document.getElementById('allegro-review-modal').style.display='none'" style="background: #ff5252; color: white; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold;">Odrzuć i Zamknij</button>
+            <button onclick="confirmAllegroSync()" style="background: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 6px; margin-left: 10px; cursor: pointer; font-weight: bold;">Zatwierdź i Rejestruj Sprzedaż</button>
+        </div>
+    </div>
+</div>
 </body>
 </html>
