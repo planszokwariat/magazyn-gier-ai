@@ -1859,8 +1859,9 @@
         };
 
         app.init();
-        window.app = app; 
-    // Funkcja komunikacji z Agentem AI
+        window.app = app;
+
+        // Funkcja komunikacji z Agentem AI
         async function askAgent(textData, mode = 'general') {
             try {
                 const response = await fetch('/.netlify/functions/agent', {
@@ -1871,72 +1872,79 @@
                 return result.answer;
             } catch (error) {
                 console.error("Błąd Agenta:", error);
+                return "Błąd komunikacji z AI";
             }
         }
 
-        // Logowanie do Allegro - WPISZ SWÓJ CLIENT ID PONIŻEJ
+        // --- INTEGRACJA ALLEGRO ---
         const ALLEGRO_CLIENT_ID = '8f33f9c35dc94b1baef53092b74d8206'; 
-
         let allegroToken = localStorage.getItem('allegro_token');
 
-// Sprawdź przy starcie, czy jesteśmy połączeni
-if (allegroToken) {
-    document.getElementById('allegro-status').innerText = "Status: ✅ Połączono (Pamięć)";
-    document.getElementById('btn-allegro-sync').style.display = 'inline-block';
-}
-
-async function loginToAllegro() {
-    const statusEl = document.getElementById('allegro-status');
-    statusEl.innerText = "Status: Generowanie kodu...";
-    try {
-        const response = await fetch('/.netlify/functions/allegro-auth', { method: 'POST' });
-        const data = await response.json();
-        if (data.user_code) {
-            alert(`TWÓJ KOD: ${data.user_code}`);
-            window.open(data.verification_uri, '_blank');
-            statusEl.innerHTML = `Wpisz kod <b>${data.user_code}</b> na Allegro.`;
-            checkAuthorization(data.device_code);
-        }
-    } catch (err) { statusEl.innerText = "Błąd połączenia."; }
-}
-
-async function checkAuthorization(deviceCode) {
-    const interval = setInterval(async () => {
-        const res = await fetch('/.netlify/functions/allegro-auth', {
-            method: 'PUT',
-            body: JSON.stringify({ deviceCode })
-        });
-        if (res.ok) {
-            const data = await res.json();
-            if (data.access_token) {
-                localStorage.setItem('allegro_token', data.access_token);
-                document.getElementById('allegro-status').innerText = "Status: ✅ Połączono";
+        // Sprawdzenie połączenia przy starcie
+        if (allegroToken) {
+            const statusEl = document.getElementById('allegro-status');
+            if(statusEl) {
+                statusEl.innerText = "Status: ✅ Połączono";
                 document.getElementById('btn-allegro-sync').style.display = 'inline-block';
-                clearInterval(interval);
             }
         }
-    }, 5000);
-}
 
-async function syncAllegroOrders() {
-    const token = localStorage.getItem('allegro_token');
-    const statusEl = document.getElementById('allegro-status');
-    statusEl.innerText = "Status: Pobieranie zamówień...";
-    
-    try {
-        const response = await fetch('/.netlify/functions/allegro-auth', { method: 'POST' });
-            headers: { 'Authorization': token }
-        });
-        const data = await response.json();
-        
-        // Wyślij do Agenta AI, żeby "zrozumiał" co kupiono
-        const interpretation = await askAgent(JSON.stringify(data), 'allegro_sync');
-        alert("Agent AI: " + interpretation);
-        statusEl.innerText = "Status: ✅ Synchronizacja zakończona";
-    } catch (err) {
-        statusEl.innerText = "❌ Błąd synchronizacji.";
-    }
-}
+        async function loginToAllegro() {
+            const statusEl = document.getElementById('allegro-status');
+            if(statusEl) statusEl.innerText = "Status: Łączenie...";
+
+            try {
+                const response = await fetch('/.netlify/functions/allegro-auth', { method: 'POST' });
+                const data = await response.json();
+
+                if (data.user_code) {
+                    alert(`TWÓJ KOD: ${data.user_code}\nWpisz go na stronie Allegro, która się teraz otworzy.`);
+                    window.open(data.verification_uri, '_blank');
+                    if(statusEl) statusEl.innerHTML = `Wpisz kod <b>${data.user_code}</b> na Allegro.`;
+                    checkAuthorization(data.device_code);
+                }
+            } catch (err) {
+                if(statusEl) statusEl.innerText = "Błąd połączenia.";
+            }
+        }
+
+        async function checkAuthorization(deviceCode) {
+            const interval = setInterval(async () => {
+                const res = await fetch('/.netlify/functions/allegro-auth', {
+                    method: 'PUT',
+                    body: JSON.stringify({ deviceCode })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.access_token) {
+                        localStorage.setItem('allegro_token', data.access_token);
+                        document.getElementById('allegro-status').innerText = "Status: ✅ Połączono";
+                        document.getElementById('btn-allegro-sync').style.display = 'inline-block';
+                        clearInterval(interval);
+                    }
+                }
+            }, 5000);
+        }
+
+        async function syncAllegroOrders() {
+            const token = localStorage.getItem('allegro_token');
+            const statusEl = document.getElementById('allegro-status');
+            if(statusEl) statusEl.innerText = "Status: Pobieranie zamówień...";
+
+            try {
+                const response = await fetch('/.netlify/functions/allegro-sync', {
+                    headers: { 'Authorization': token }
+                });
+                const data = await response.json();
+                
+                // Analiza przez Agenta AI
+                const interpretation = await askAgent(JSON.stringify(data), 'allegro_sync');
+                alert("Agent AI: " + interpretation);
+                if(statusEl) statusEl.innerText = "Status: ✅ Synchronizacja zakończona";
+            } catch (err) {
+                if(statusEl) statusEl.innerText = "Błąd pobierania.";
+            }
+        }
     </script>
 </body>
 </html>
