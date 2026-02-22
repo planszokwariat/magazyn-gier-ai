@@ -1727,28 +1727,55 @@
 
             io: {
                 save: () => {
-    // 1. Natychmiastowy zapis lokalny (strona działa szybko jak dawniej)
+    // 1. Błyskawiczny zapis na komputerze (żeby strona nie ładowała się w nieskończoność)
     localStorage.setItem(STORAGE_KEY, JSON.stringify(app.data));
     
-    // 2. Magia chmury: Wysłanie kopii do Firebase w tle
+    // 2. Magia chmury: natychmiastowe wysłanie kopii do Firebase w tle
     fetch('https://magazyn-a31e4-default-rtdb.europe-west1.firebasedatabase.app/data.json', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(app.data)
-    }).catch(err => console.error("Błąd synchronizacji z chmurą:", err));
+    }).catch(err => console.error("Błąd synchronizacji z Firebase:", err));
 },
-                load: () => {
-                    const str = localStorage.getItem(STORAGE_KEY);
-                    if(str) {
-                        app.data = JSON.parse(str);
-                        if(!app.data.clients) app.data.clients=[]; if(!app.data.games) app.data.games=[];
-                        if(!app.data.history) app.data.history=[]; if(!app.data.inventory) app.data.inventory=[];
-                    } else {
-                        app.data.warehouses = [DEFAULT_WH, 'Sklep', COLL_WH];
-                        app.data.clients = [{id:1, name:'Rebel'}]; app.data.publishers = [{id:1, name:'Rebel', code:'REB'}];
-                        app.data.games = [{id:101, title:'Dixit', publisherId:1}];
-                    }
-                },
+
+load: async () => {
+    // 1. Zawsze najpierw wczytujemy z przeglądarki (dzięki temu aplikacja startuje od razu)
+    const str = localStorage.getItem(STORAGE_KEY);
+    if(str) {
+        app.data = JSON.parse(str);
+        if(!app.data.clients) app.data.clients=[]; if(!app.data.games) app.data.games=[];
+        if(!app.data.history) app.data.history=[]; if(!app.data.inventory) app.data.inventory=[];
+    }
+    
+    // 2. Pobieramy NAJŚWIEŻSZE dane z chmury (kluczowe, gdy zmieniasz komputer lub telefon!)
+    try {
+        const res = await fetch('https://magazyn-a31e4-default-rtdb.europe-west1.firebasedatabase.app/data.json');
+        const cloudData = await res.json();
+        
+        if (cloudData) {
+            app.data = cloudData;
+            // Zabezpieczenie przed brakiem kategorii
+            if(!app.data.clients) app.data.clients=[]; if(!app.data.games) app.data.games=[];
+            if(!app.data.history) app.data.history=[]; if(!app.data.inventory) app.data.inventory=[];
+            
+            // Od razu nadpisujemy dysk twardy, żeby komputer zapamiętał nową bazę
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(app.data));
+            
+            // Sprytny trik: jeśli to nowy komputer (plik lokalny 'str' był pusty), odświeżamy widok, by pokazać tabele
+            if (!str) {
+                location.reload(); 
+            }
+        }
+    } catch (err) {
+        console.error("Działasz w trybie offline - pobieranie z chmury nie powiodło się.", err);
+        // Awaryjne ładowanie startowych danych, jeśli np. nie masz w ogóle internetu
+        if (!str) {
+            app.data.warehouses = ['Magazyn', 'Sklep', 'Kolekcja'];
+            app.data.clients = [{id:1, name:'Startowy Klient'}]; app.data.publishers = [{id:1, name:'Startowy Wydawca', code:'XXX'}];
+            app.data.games = [{id:101, title:'Moja pierwsza gra', publisherId:1}];
+        }
+    }
+},
                 exportData: () => {
                     const blob = new Blob([JSON.stringify(app.data)], {type: 'application/json'});
                     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
