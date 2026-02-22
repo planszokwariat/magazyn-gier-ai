@@ -2059,16 +2059,19 @@ function confirmAllegroSync() {
     </script>
 
 <div id="allegro-review-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center;">
-    <div style="background: #1e1e1e; padding: 20px; border-radius: 12px; border: 2px solid #00bcd4; width: 90%; max-width: 700px; color: white; max-height: 80vh; overflow-y: auto;">
-        <h2 style="color: #00bcd4; margin-top: 0;">🔎 Weryfikacja zamówień z AI</h2>
-        <p>AI przeanalizowało zamówienia. Dopasuj nazwy z Allegro do produktów w Twoim magazynie. Jeśli czegoś nie chcesz dodawać, wybierz "Ignoruj".</p>
+    <div style="background: #1e1e1e; padding: 20px; border-radius: 12px; border: 2px solid #00bcd4; width: 90%; max-width: 800px; color: white; height: 85vh; display: flex; flex-direction: column;">
         
-        <div id="allegro-review-list">
+        <div style="flex-shrink: 0; margin-bottom: 15px;">
+            <h2 style="color: #00bcd4; margin-top: 0; margin-bottom: 10px;">🔎 Weryfikacja zamówień z AI</h2>
+            <p style="margin: 0; color: #ccc; font-size: 14px;">Dopasuj nazwy z Allegro (lewa kolumna) do Twojego magazynu (prawa kolumna). Zacznij wpisywać nazwę w polu, aby przeszukać bazę. Pozostaw pole puste, aby <b>zignorować</b> pozycję.</p>
+        </div>
+        
+        <div id="allegro-review-list" style="flex-grow: 1; overflow-y: auto; border-top: 1px solid #333; border-bottom: 1px solid #333; padding: 10px 0;">
             </div>
 
-        <div style="margin-top: 20px; text-align: right;">
-            <button onclick="document.getElementById('allegro-review-modal').style.display='none'" style="background: #ff5252; color: white; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold;">Odrzuć i Zamknij</button>
-            <button onclick="confirmAllegroSync()" style="background: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 6px; margin-left: 10px; cursor: pointer; font-weight: bold;">Zatwierdź i Rejestruj Sprzedaż</button>
+        <div style="margin-top: 15px; text-align: right; flex-shrink: 0;">
+            <button onclick="document.getElementById('allegro-review-modal').style.display='none'" style="background: #ff5252; color: white; padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 14px;">Odrzuć i Zamknij</button>
+            <button onclick="confirmAllegroSync()" style="background: #4CAF50; color: white; padding: 12px 24px; border: none; border-radius: 6px; margin-left: 10px; cursor: pointer; font-weight: bold; font-size: 14px;">Zatwierdź i Rejestruj Sprzedaż</button>
         </div>
     </div>
 </div>
