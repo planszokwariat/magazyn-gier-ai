@@ -1918,6 +1918,17 @@ async function checkAuthorization(deviceCode) {
         }
     }, 5000);
 }
+        async function syncAllegroOrders() {
+    const token = localStorage.getItem('allegro_token');
+    const response = await fetch('/.netlify/functions/allegro-sync', {
+        headers: { 'Authorization': token }
+    });
+    const data = await response.json();
+    
+    // Przekaż dane do Agenta AI, żeby je przeanalizował
+    const interpretation = await askAgent(JSON.stringify(data), 'allegro_sync');
+    alert("Agent AI przeanalizował zamówienia: " + interpretation);
+}
     </script>
 </body>
 </html>
