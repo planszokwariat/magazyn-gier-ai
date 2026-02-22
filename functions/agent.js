@@ -4,25 +4,25 @@ exports.handler = async (event) => {
     const apiKey = process.env.GEMINI_API_KEY;
     
     if (!apiKey) {
-        return { statusCode: 500, body: JSON.stringify({ answer: "Błąd: Brak klucza API w ustawieniach Netlify!" }) };
+        return { statusCode: 500, body: JSON.stringify({ answer: "Błąd: Brak klucza API" }) };
     }
 
     try {
-        const body = JSON.parse(event.body);
-        const promptText = `Jesteś asystentem magazynu gier planszowych. Przeanalizuj dane JSON z Allegro: ${body.text}. Wypisz w punktach: tytuł gry i ilość sztuk. Odpowiadaj krótko.`;
+        // DIAGNOSTYKA: Pytamy API Google, jakie modele są dla Ciebie odblokowane
+        const response = await axios.get(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+        
+        // Wyciągamy z odpowiedzi same nazwy modeli
+        const availableModels = response.data.models.map(m => m.name).join(", ");
 
-        // ZMIANA: Przechodzimy na niezawodny model gemini-pro w stabilnej wersji v1
-        const response = await axios.post(
-            `https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${apiKey}`,
-            { contents: [{ parts: [{ text: promptText }] }] },
-            { headers: { 'Content-Type': 'application/json' } }
-        );
-
-        const textAnswer = response.data.candidates[0].content.parts[0].text;
-
-        return { statusCode: 200, body: JSON.stringify({ answer: textAnswer }) };
+        return { 
+            statusCode: 200, 
+            body: JSON.stringify({ answer: "MODELE DOSTĘPNE DLA TWOJEGO KLUCZA: " + availableModels }) 
+        };
     } catch (error) {
         const errorDetails = error.response ? JSON.stringify(error.response.data) : error.message;
-        return { statusCode: 500, body: JSON.stringify({ answer: "Błąd Agenta: " + errorDetails }) };
+        return { 
+            statusCode: 500, 
+            body: JSON.stringify({ answer: "Błąd Diagnostyki: " + errorDetails }) 
+        };
     }
 };
