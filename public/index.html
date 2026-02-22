@@ -1916,10 +1916,10 @@
             }, 5000);
         }
 
-        let pendingAllegroOrdersIds = []; // Globalna pamięć na nowe ID zamówień
-window.allegroInventoryTitles = []; // Globalna pamięć dla tytułów z magazynu
+        let pendingAllegroOrdersIds = []; 
+window.allegroInventoryTitles = []; 
 
-// 1. NASZA WŁASNA WYSZUKIWARKA (Zastępuje problematyczny datalist)
+// 1. NASZA WŁASNA WYSZUKIWARKA (Z DIAGNOSTYKĄ)
 function filterAllegroDropdown(index) {
     let input = document.getElementById(`allegro-match-${index}`);
     let dropdown = document.getElementById(`allegro-dropdown-${index}`);
@@ -1927,6 +1927,13 @@ function filterAllegroDropdown(index) {
     
     dropdown.innerHTML = "";
     let hasMatches = false;
+
+    // DIAGNOSTYKA: Jeśli nie załadowałeś gier przed kliknięciem pobierania
+    if (window.allegroInventoryTitles.length === 0) {
+        dropdown.innerHTML = "<div style='padding:10px; color:#ff5252; font-weight:bold; background:#222;'>❌ Baza pusta! Najpierw załaduj plik JSON.</div>";
+        dropdown.style.display = "block";
+        return;
+    }
 
     window.allegroInventoryTitles.forEach(title => {
         if (title.toLowerCase().includes(filter)) {
@@ -1937,12 +1944,11 @@ function filterAllegroDropdown(index) {
             div.style.cursor = "pointer";
             div.style.borderBottom = "1px solid #444";
             div.style.color = "white";
+            div.style.backgroundColor = "#2d2d2d";
             
-            // Efekt podświetlenia po najechaniu myszką
             div.onmouseover = function() { this.style.backgroundColor = "#00bcd4"; this.style.color = "black"; };
-            div.onmouseout = function() { this.style.backgroundColor = "transparent"; this.style.color = "white"; };
+            div.onmouseout = function() { this.style.backgroundColor = "#2d2d2d"; this.style.color = "white"; };
             
-            // Po kliknięciu wkleja tytuł do pola i zamyka listę
             div.onclick = function() {
                 input.value = title;
                 dropdown.style.display = "none";
@@ -1951,26 +1957,27 @@ function filterAllegroDropdown(index) {
         }
     });
 
-    dropdown.style.display = hasMatches ? "block" : "none";
+    if (!hasMatches && filter !== "") {
+        dropdown.innerHTML = "<div style='padding:10px; color:#777; background:#222;'>Brak dopasowań...</div>";
+        dropdown.style.display = "block";
+    } else {
+        dropdown.style.display = hasMatches ? "block" : "none";
+    }
 }
 
-// 2. Zamknięcie listy podpowiedzi, jeśli klikniesz gdzieś obok
 document.addEventListener("click", function(e) {
     if (e.target.tagName !== "INPUT") {
         document.querySelectorAll('[id^="allegro-dropdown-"]').forEach(d => d.style.display = "none");
     }
 });
 
-// 3. ZAKTUALIZOWANA FUNKCJA GŁÓWNA
 async function syncAllegroOrders() {
     const token = localStorage.getItem('allegro_token');
     const statusEl = document.getElementById('allegro-status');
     if(statusEl) statusEl.innerText = "Status: AI analizuje zamówienia...";
 
     try {
-        const response = await fetch('/.netlify/functions/allegro-sync', {
-            headers: { 'Authorization': token }
-        });
+        const response = await fetch('/.netlify/functions/allegro-sync', { headers: { 'Authorization': token } });
         const data = await response.json();
         
         let checkoutForms = data.checkoutForms || [];
@@ -1984,16 +1991,11 @@ async function syncAllegroOrders() {
         }
 
         pendingAllegroOrdersIds = newOrders.map(o => o.id);
-
         const aiResponse = await askAgent(JSON.stringify(newOrders), 'allegro_sync');
         
         let soldGames = [];
-        try {
-            soldGames = JSON.parse(aiResponse);
-        } catch (e) {
-            alert("Błąd formatu. AI odpowiedziało:\n\n" + aiResponse.substring(0, 400));
-            return;
-        }
+        try { soldGames = JSON.parse(aiResponse); } 
+        catch (e) { alert("Błąd formatu. AI odpowiedziało:\n\n" + aiResponse.substring(0, 400)); return; }
 
         // POBIERANIE TYTUŁÓW DO GLOBALNEJ BAZY
         window.allegroInventoryTitles = [];
@@ -2002,14 +2004,10 @@ async function syncAllegroOrders() {
             if (!cell) return;
             let inputField = cell.querySelector('input');
             let title = inputField ? inputField.value.trim() : cell.innerText.trim();
-            if (title && title !== "") {
-                window.allegroInventoryTitles.push(title); 
-            }
+            if (title && title !== "") window.allegroInventoryTitles.push(title); 
         });
 
-        // GENEROWANIE TABELI
-        let html = '<div style="width: 100%; overflow-x: visible;">'; // Musi być visible, żeby listy nie były ucinane!
-        html += '<table style="width:100%; border-collapse: collapse; text-align: left; min-width: 500px;">';
+        let html = '<table style="width:100%; border-collapse: collapse; text-align: left;">';
         html += '<tr style="border-bottom: 1px solid #444;">';
         html += '<th style="width: 40%; padding: 5px;">Allegro (AI)</th>';
         html += '<th style="width: 15%; text-align: center;">Szt.</th>';
@@ -2029,22 +2027,20 @@ async function syncAllegroOrders() {
                 <td style="padding: 10px 5px; font-size: 14px; color: #ccc;">${game.tytul}</td>
                 <td id="allegro-qty-${index}" style="font-weight: bold; color: #ffb74d; text-align: center;">${game.ilosc}</td>
                 <td style="padding: 10px 5px; position: relative;">
-                    
                     <input type="text" id="allegro-match-${index}" value="${matchedTitle}" 
                     placeholder="Wpisz nazwę (puste=Ignoruj)" autocomplete="off"
-                    oninput="filterAllegroDropdown(${index})" onfocus="filterAllegroDropdown(${index})"
-                    style="width: 100%; box-sizing: border-box; padding: 8px; background: #2d2d2d; color: white; border: 1px solid #444; border-radius: 4px; font-size: 14px;">
+                    oninput="filterAllegroDropdown(${index})" onfocus="filterAllegroDropdown(${index})" onblur="setTimeout(()=>document.getElementById('allegro-dropdown-${index}').style.display='none', 200)"
+                    style="width: 100%; box-sizing: border-box; padding: 8px; background: #2d2d2d; color: white; border: 1px solid #00bcd4; border-radius: 4px; font-size: 14px;">
                     
-                    <div id="allegro-dropdown-${index}" style="display: none; position: absolute; top: 100%; left: 5px; right: 5px; background: #333; border: 1px solid #00bcd4; max-height: 200px; overflow-y: auto; z-index: 99999; box-shadow: 0px 4px 10px rgba(0,0,0,0.8); border-radius: 0 0 4px 4px;"></div>
-                
+                    <div id="allegro-dropdown-${index}" style="display: none; position: absolute; top: 100%; left: 5px; right: 5px; background: #333; border: 1px solid #00bcd4; max-height: 250px; overflow-y: auto; z-index: 999999; box-shadow: 0px 8px 16px rgba(0,0,0,0.9); border-radius: 0 0 6px 6px;"></div>
                 </td>
             </tr>`;
         });
-        html += '</table></div>';
+        html += '</table>';
 
         document.getElementById('allegro-review-list').innerHTML = html;
         document.getElementById('allegro-review-modal').style.display = 'flex';
-        if(statusEl) statusEl.innerText = "Status: Oczekiwanie na weryfikację użytkownika...";
+        if(statusEl) statusEl.innerText = "Status: Oczekiwanie na weryfikację...";
 
     } catch (err) {
         console.error(err);
@@ -2060,7 +2056,7 @@ function confirmAllegroSync() {
 
     reviewDropdowns.forEach((dropdown, index) => {
         let selectedTitle = dropdown.value.trim();
-        if (!selectedTitle) return; // Ignoruj jeśli puste
+        if (!selectedTitle) return;
 
         let qty = parseInt(document.getElementById(`allegro-qty-${index}`).innerText);
         let matchFound = false;
@@ -2079,20 +2075,13 @@ function confirmAllegroSync() {
 
                 if (historyBody) {
                     let d = new Date().toLocaleString('pl-PL');
-                    let newHistoryRow = `<tr style="color: #ffb74d;">
-                        <td>${d}</td>
-                        <td>Sprzedaż (Allegro)</td>
-                        <td>${selectedTitle}</td>
-                        <td>-${qty}</td>
-                    </tr>`;
+                    let newHistoryRow = `<tr style="color: #ffb74d;"><td>${d}</td><td>Sprzedaż (Allegro)</td><td>${selectedTitle}</td><td>-${qty}</td></tr>`;
                     historyBody.innerHTML = newHistoryRow + historyBody.innerHTML;
                 }
             }
         });
 
-        if(!matchFound) {
-            updateMessage += `❌ UWAGA: Nie udało się odjąć "${selectedTitle}" - nie ma takiej gry w tabeli!\n`;
-        }
+        if(!matchFound) updateMessage += `❌ UWAGA: Nie udało się odjąć "${selectedTitle}" - nie ma takiej gry w tabeli!\n`;
     });
 
     let processedOrders = JSON.parse(localStorage.getItem('processed_allegro_orders') || '[]');
@@ -2108,17 +2097,17 @@ function confirmAllegroSync() {
 </script>
 
 <div id="allegro-review-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center;">
-    <div style="background: #1e1e1e; padding: 20px; border-radius: 12px; border: 2px solid #00bcd4; width: 95%; max-width: 800px; color: white; position: relative; max-height: 90vh;">
+    <div style="background: #1e1e1e; padding: 20px; border-radius: 12px; border: 2px solid #00bcd4; width: 95%; max-width: 800px; color: white; display: flex; flex-direction: column; max-height: 90vh;">
         
-        <div style="margin-bottom: 15px;">
+        <div style="flex-shrink: 0; margin-bottom: 15px;">
             <h2 style="color: #00bcd4; margin-top: 0; margin-bottom: 10px;">🔎 Weryfikacja zamówień z AI</h2>
-            <p style="margin: 0; color: #ccc; font-size: 14px;">Dopasuj nazwy z Allegro (lewa kolumna) do Twojego magazynu (prawa kolumna). Zacznij wpisywać nazwę w polu, aby przeszukać bazę. Pozostaw pole puste, aby <b>zignorować</b> pozycję.</p>
+            <p style="margin: 0; color: #ccc; font-size: 14px;">Dopasuj nazwy z Allegro do Twojego magazynu. Kliknij w pole, aby rozwinąć listę i wyszukać. Pozostaw pole puste, aby <b>zignorować</b>.</p>
         </div>
         
-        <div id="allegro-review-list" style="max-height: 55vh; overflow-y: auto; border-top: 1px solid #333; border-bottom: 1px solid #333; padding: 10px 0;">
+        <div id="allegro-review-list" style="flex-grow: 1; overflow-y: auto; border-top: 1px solid #333; border-bottom: 1px solid #333; padding: 10px 0 200px 0;">
         </div>
 
-        <div style="margin-top: 15px; text-align: right;">
+        <div style="margin-top: 15px; text-align: right; flex-shrink: 0;">
             <button onclick="document.getElementById('allegro-review-modal').style.display='none'" style="background: #ff5252; color: white; padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 14px;">Odrzuć i Zamknij</button>
             <button onclick="confirmAllegroSync()" style="background: #4CAF50; color: white; padding: 12px 24px; border: none; border-radius: 6px; margin-left: 10px; cursor: pointer; font-weight: bold; font-size: 14px;">Zatwierdź i Rejestruj Sprzedaż</button>
         </div>
