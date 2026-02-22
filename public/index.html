@@ -234,7 +234,16 @@
     </style>
 </head>
 <body>
-
+<div id="allegro-integration" style="margin: 20px; padding: 20px; background: #1e1e1e; border: 2px solid #00bcd4; border-radius: 12px; color: white;">
+    <h2 style="color: #00bcd4; margin-top: 0;">🤖 Agent AI: Integracja Allegro</h2>
+    <p id="allegro-status">Status: 🔴 Niepołączono</p>
+    <button id="btn-allegro-login" onclick="loginToAllegro()" style="background: #00bcd4; color: black; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 16px;">
+        POŁĄCZ Z ALLEGRO
+    </button>
+    <button id="btn-allegro-sync" onclick="syncAllegroOrders()" style="display: none; background: #4CAF50; color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-weight: bold; margin-left: 10px;">
+        POBIERZ ZAMÓWIENIA
+    </button>
+</div>
     <!-- TOPBAR -->
     <div class="topbar">
         <h1>Magazyn Gier v3.12 🎲</h1>
