@@ -1,27 +1,39 @@
-const { GoogleGenerativeAI } = require("@google/generative-ai");
-
 exports.handler = async (event) => {
-    // Pobranie klucza z Netlify
+    // 1. Sprawdzamy, czy klucz z Netlify jest dostępny
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) return { statusCode: 500, body: JSON.stringify({ answer: "Błąd: Brak klucza w Netlify!" }) };
+    if (!apiKey) {
+        return { statusCode: 500, body: JSON.stringify({ answer: "Błąd: Brak klucza GEMINI_API_KEY w Netlify!" }) };
+    }
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    
     try {
-        // Wymuszamy stabilną wersję v1 dla modelu flash
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }, { apiVersion: 'v1' });
-
         const body = JSON.parse(event.body);
-        const prompt = `Jesteś asystentem magazynu gier. Analizuj dane JSON: ${body.text}. Wypisz tylko: Tytuł i ilość.`;
+        const promptText = `Jesteś asystentem magazynu gier planszowych. Przeanalizuj dane z Allegro: ${body.text}. Wypisz krótko tylko: tytuł gry i ilość sprzedanych sztuk.`;
 
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        
+        // 2. Bezpośrednie, siłowe uderzenie do API Google (omija bibliotekę NPM)
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: promptText }] }]
+            })
+        });
+
+        // 3. Sprawdzamy czy Google nie odrzuciło zapytania
+        if (!response.ok) {
+            const errData = await response.text();
+            throw new Error(`Kod ${response.status}: ${errData}`);
+        }
+
+        // 4. Odczytanie odpowiedzi AI
+        const data = await response.json();
+        const textAnswer = data.candidates[0].content.parts[0].text;
+
         return {
             statusCode: 200,
-            body: JSON.stringify({ answer: response.text() })
+            body: JSON.stringify({ answer: textAnswer })
         };
     } catch (error) {
+        console.error("Szczegóły błędu bezpośredniego zapytania:", error);
         return {
             statusCode: 500,
             body: JSON.stringify({ answer: "Błąd Agenta: " + error.message })
