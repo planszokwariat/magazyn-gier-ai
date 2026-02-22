@@ -2,27 +2,29 @@ const axios = require('axios');
 
 exports.handler = async (event) => {
     const apiKey = process.env.GEMINI_API_KEY;
-    
-    if (!apiKey) {
-        return { statusCode: 500, body: JSON.stringify({ answer: "Błąd: Brak klucza API w ustawieniach Netlify!" }) };
-    }
+    if (!apiKey) return { statusCode: 500, body: JSON.stringify({ answer: "Błąd: Brak klucza API" }) };
 
     try {
         const body = JSON.parse(event.body);
-        const promptText = `Jesteś asystentem magazynu gier planszowych. Przeanalizuj dane JSON z Allegro: ${body.text}. Wypisz w punktach: tytuł gry i ilość sztuk. Odpowiadaj krótko.`;
+        
+        // ZMIANA: Bardzo precyzyjna instrukcja dla AI, aby zwracał tylko czysty kod JSON
+        const promptText = `Jesteś systemem ERP. Przeanalizuj zamówienia z Allegro: ${body.text}. 
+        Zwróć TYLKO I WYŁĄCZNIE czystą tablicę JSON (bez znaczników markdown, bez słowa "json", bez żadnego tekstu pobocznego). 
+        Format: [{"tytul": "Dokładna nazwa gry", "ilosc": 1}]`;
 
-        // UŻYWAMY MODELU, KTÓRY JEST DOSTĘPNY DLA TWOJEGO KLUCZA: gemini-2.5-flash
         const response = await axios.post(
             `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
             { contents: [{ parts: [{ text: promptText }] }] },
             { headers: { 'Content-Type': 'application/json' } }
         );
 
-        const textAnswer = response.data.candidates[0].content.parts[0].text;
+        let textAnswer = response.data.candidates[0].content.parts[0].text;
+        
+        // Zabezpieczenie: usuwamy ewentualne znaczniki markdown, jeśli AI by je dodało
+        textAnswer = textAnswer.replace(/```json/g, '').replace(/```/g, '').trim();
 
         return { statusCode: 200, body: JSON.stringify({ answer: textAnswer }) };
     } catch (error) {
-        const errorDetails = error.response ? JSON.stringify(error.response.data) : error.message;
-        return { statusCode: 500, body: JSON.stringify({ answer: "Błąd Agenta: " + errorDetails }) };
+        return { statusCode: 500, body: JSON.stringify({ answer: "Błąd Agenta" }) };
     }
 };
