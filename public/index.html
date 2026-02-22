@@ -1922,45 +1922,58 @@
     if(statusEl) statusEl.innerText = "Status: Pobieranie i analiza zamówień przez AI...";
 
     try {
-        // 1. Pobieramy dane z Allegro
+        // 1. Pobieramy wszystkie ostatnie zamówienia z Allegro
         const response = await fetch('/.netlify/functions/allegro-sync', {
             headers: { 'Authorization': token }
         });
         const data = await response.json();
         
-        // 2. Wysyłamy do naszego Agenta AI
-        const aiResponse = await askAgent(JSON.stringify(data), 'allegro_sync');
+        // 2. FILTROWANIE DUPLIKATÓW (Zabezpieczenie)
+        let checkoutForms = data.checkoutForms || []; // Tablica zamówień
         
-        // 3. Przetwarzamy odpowiedź od AI (zamieniamy tekst na obiekt JSON)
+        // Wyciągamy z pamięci przeglądarki listę ID zamówień już pobranych (lub tworzymy pustą listę)
+        let processedOrders = JSON.parse(localStorage.getItem('processed_allegro_orders') || '[]');
+        
+        // Wybieramy TYLKO te zamówienia, których ID nie ma jeszcze na naszej liście
+        let newOrders = checkoutForms.filter(order => !processedOrders.includes(order.id));
+
+        // Jeśli nie ma nic nowego, kończymy pracę
+        if (newOrders.length === 0) {
+            alert("Brak nowych zamówień z Allegro. Wszystkie zostały już zaktualizowane w magazynie.");
+            if(statusEl) statusEl.innerText = "Status: ✅ Brak nowych zamówień";
+            return;
+        }
+
+        // 3. Wysyłamy do Agenta AI TYLKO NOWE zamówienia (oszczędza to też limity w Google)
+        const aiResponse = await askAgent(JSON.stringify(newOrders), 'allegro_sync');
+        
+        // 4. Przetwarzamy odpowiedź od AI na format kodu
         let soldGames = [];
         try {
             soldGames = JSON.parse(aiResponse);
         } catch (e) {
             console.error("AI nie zwróciło poprawnego JSONa:", aiResponse);
-            alert("Błąd: AI nie zwróciło danych w formacie czytelnym dla systemu.");
-            if(statusEl) statusEl.innerText = "Status: Błąd parsowania danych";
+            alert("Błąd: AI nie zwróciło danych w odpowiednim formacie.");
+            if(statusEl) statusEl.innerText = "Status: Błąd parsowania danych od AI";
             return;
         }
 
-        // 4. LOGIKA ODEJMOWANIA ZE STANU MAGAZYNOWEGO
-        let updateMessage = "Agent AI przetworzył zamówienia:\n\n";
-        let tableRows = document.querySelectorAll('#inventory-body tr'); // Szukamy wierszy w Twojej tabeli
+        // 5. LOGIKA ODEJMOWANIA ZE STANU MAGAZYNOWEGO
+        let updateMessage = "Agent AI przetworzył nowe zamówienia:\n\n";
+        let tableRows = document.querySelectorAll('#inventory-body tr');
 
         soldGames.forEach(soldGame => {
             let gameFound = false;
             
             tableRows.forEach(row => {
-                let titleCell = row.cells[0].innerText.toLowerCase(); // Pierwsza kolumna to Tytuł
-                let stockCell = row.cells[2]; // Trzecia kolumna to Ilość (indeks 2)
+                let titleCell = row.cells[0].innerText.toLowerCase();
+                let stockCell = row.cells[2];
                 
-                // Szukamy dopasowania (częściowego) w nazwie
                 if (titleCell.includes(soldGame.tytul.toLowerCase())) {
                     let currentStock = parseInt(stockCell.innerText) || 0;
                     let newStock = currentStock - soldGame.ilosc;
                     
-                    // Zabezpieczenie przed ujemnym stanem
                     stockCell.innerText = newStock < 0 ? 0 : newStock; 
-                    
                     updateMessage += `✅ ${soldGame.tytul}: Zmniejszono stan o ${soldGame.ilosc} szt.\n`;
                     gameFound = true;
                 }
@@ -1971,11 +1984,16 @@
             }
         });
 
-        // 5. Powiadomienie o sukcesie
+        // 6. ZAPISYWANIE NOWYCH ZAMÓWIEŃ DO "ZESZYTU"
+        // Dopiero gdy gry zejdą ze stanu, dodajemy ID tych zamówień do zapisanych
+        newOrders.forEach(order => processedOrders.push(order.id));
+        localStorage.setItem('processed_allegro_orders', JSON.stringify(processedOrders));
+
+        // 7. Powiadomienie o sukcesie
         alert(updateMessage);
-        if(statusEl) statusEl.innerText = "Status: ✅ Synchronizacja i aktualizacja zakończona";
+        if(statusEl) statusEl.innerText = "Status: ✅ Synchronizacja zakończona pomyślnie";
         
-        // Zapisz nowy stan do LocalStorage, żeby nie zniknął po odświeżeniu
+        // Zapis stanu do LocalStorage
         saveData(); 
 
     } catch (err) {
