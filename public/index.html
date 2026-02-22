@@ -1917,24 +1917,72 @@
         }
 
         async function syncAllegroOrders() {
-            const token = localStorage.getItem('allegro_token');
-            const statusEl = document.getElementById('allegro-status');
-            if(statusEl) statusEl.innerText = "Status: Pobieranie zamówień...";
+    const token = localStorage.getItem('allegro_token');
+    const statusEl = document.getElementById('allegro-status');
+    if(statusEl) statusEl.innerText = "Status: Pobieranie i analiza zamówień przez AI...";
 
-            try {
-                const response = await fetch('/.netlify/functions/allegro-sync', {
-                    headers: { 'Authorization': token }
-                });
-                const data = await response.json();
-                
-                // Analiza przez Agenta AI
-                const interpretation = await askAgent(JSON.stringify(data), 'allegro_sync');
-                alert("Agent AI: " + interpretation);
-                if(statusEl) statusEl.innerText = "Status: ✅ Synchronizacja zakończona";
-            } catch (err) {
-                if(statusEl) statusEl.innerText = "Błąd pobierania.";
-            }
+    try {
+        // 1. Pobieramy dane z Allegro
+        const response = await fetch('/.netlify/functions/allegro-sync', {
+            headers: { 'Authorization': token }
+        });
+        const data = await response.json();
+        
+        // 2. Wysyłamy do naszego Agenta AI
+        const aiResponse = await askAgent(JSON.stringify(data), 'allegro_sync');
+        
+        // 3. Przetwarzamy odpowiedź od AI (zamieniamy tekst na obiekt JSON)
+        let soldGames = [];
+        try {
+            soldGames = JSON.parse(aiResponse);
+        } catch (e) {
+            console.error("AI nie zwróciło poprawnego JSONa:", aiResponse);
+            alert("Błąd: AI nie zwróciło danych w formacie czytelnym dla systemu.");
+            if(statusEl) statusEl.innerText = "Status: Błąd parsowania danych";
+            return;
         }
+
+        // 4. LOGIKA ODEJMOWANIA ZE STANU MAGAZYNOWEGO
+        let updateMessage = "Agent AI przetworzył zamówienia:\n\n";
+        let tableRows = document.querySelectorAll('#inventory-body tr'); // Szukamy wierszy w Twojej tabeli
+
+        soldGames.forEach(soldGame => {
+            let gameFound = false;
+            
+            tableRows.forEach(row => {
+                let titleCell = row.cells[0].innerText.toLowerCase(); // Pierwsza kolumna to Tytuł
+                let stockCell = row.cells[2]; // Trzecia kolumna to Ilość (indeks 2)
+                
+                // Szukamy dopasowania (częściowego) w nazwie
+                if (titleCell.includes(soldGame.tytul.toLowerCase())) {
+                    let currentStock = parseInt(stockCell.innerText) || 0;
+                    let newStock = currentStock - soldGame.ilosc;
+                    
+                    // Zabezpieczenie przed ujemnym stanem
+                    stockCell.innerText = newStock < 0 ? 0 : newStock; 
+                    
+                    updateMessage += `✅ ${soldGame.tytul}: Zmniejszono stan o ${soldGame.ilosc} szt.\n`;
+                    gameFound = true;
+                }
+            });
+
+            if (!gameFound) {
+                updateMessage += `❌ ${soldGame.tytul}: Nie znaleziono takiej gry w tabeli!\n`;
+            }
+        });
+
+        // 5. Powiadomienie o sukcesie
+        alert(updateMessage);
+        if(statusEl) statusEl.innerText = "Status: ✅ Synchronizacja i aktualizacja zakończona";
+        
+        // Zapisz nowy stan do LocalStorage, żeby nie zniknął po odświeżeniu
+        saveData(); 
+
+    } catch (err) {
+        console.error(err);
+        if(statusEl) statusEl.innerText = "Błąd komunikacji z serwerem.";
+    }
+}
     </script>
 </body>
 </html>
