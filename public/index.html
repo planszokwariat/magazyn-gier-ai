@@ -1947,7 +1947,9 @@ async function syncAllegroOrders() {
         try {
             soldGames = JSON.parse(aiResponse);
         } catch (e) {
-            alert("Błąd: AI nie zwróciło poprawnego formatu.");
+            // TUTAJ JEST ZMIANA: Skrypt wyrzuci na ekran dokładną odpowiedź od Agenta
+            alert("Błąd formatu. AI zamiast danych, odpowiedziało to:\n\n" + aiResponse.substring(0, 400));
+            if(statusEl) statusEl.innerText = "Status: ❌ Błąd formatu AI";
             return;
         }
 
@@ -1963,7 +1965,7 @@ async function syncAllegroOrders() {
             }
         });
 
-        // TWORZENIE BAZY PODPOWIEDZI (Doklejamy do body, co naprawia błąd wyszukiwarki!)
+        // TWORZENIE BAZY PODPOWIEDZI (Doklejamy do body)
         let oldDatalist = document.getElementById('inventory-titles');
         if (oldDatalist) oldDatalist.remove();
         
