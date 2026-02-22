@@ -1730,57 +1730,71 @@
     // 1. Zapis lokalny działa zawsze
     localStorage.setItem(STORAGE_KEY, JSON.stringify(app.data));
     
-    // 2. BLOKADA: Jeśli system nie pobrał jeszcze chmury, zabraniamy mu jej nadpisywać!
-    if (!window.cloudSyncReady) {
-        console.warn("Zapis do chmury zablokowany - czekam na wczytanie danych z serwera.");
-        return;
-    }
+    // 2. BLOKADA: Jeśli system nie pobrał jeszcze chmury, zabraniamy nadpisywać!
+    if (!window.cloudSyncReady) return;
 
     // 3. Bezpieczne wysłanie do Firebase
     fetch('https://magazyn-a31e4-default-rtdb.europe-west1.firebasedatabase.app/data.json', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(app.data)
-    }).catch(err => console.error("Błąd synchronizacji z Firebase:", err));
+    }).catch(err => console.error("Błąd zapisu Firebase:", err));
 },
 
-load: async () => {
-    // Zmienna globalna zdejmująca blokadę
+load: () => {
     window.cloudSyncReady = false; 
 
-    // 1. Wczytanie z dysku (szybki start)
+    // 1. BŁYSKAWICZNY START (Rozwiązuje problem zawieszającej się strony!)
     const str = localStorage.getItem(STORAGE_KEY);
     if(str) {
         app.data = JSON.parse(str);
         if(!app.data.clients) app.data.clients=[]; if(!app.data.games) app.data.games=[];
         if(!app.data.history) app.data.history=[]; if(!app.data.inventory) app.data.inventory=[];
-        
-        // Mamy lokalne dane, zdejmujemy blokadę zapisu
         window.cloudSyncReady = true; 
+    } else {
+        // ZAWÓR BEZPIECZEŃSTWA: Jeśli to nowy komputer, ładujemy puste struktury, by system "nie wybuchł"
+        app.data = {
+            warehouses: ['Magazyn', 'Sklep', 'Kolekcja'],
+            clients: [], publishers: [], games: [], history: [], inventory: []
+        };
     }
     
-    // 2. Pobieranie z Firebase w tle
-    try {
-        const res = await fetch('https://magazyn-a31e4-default-rtdb.europe-west1.firebasedatabase.app/data.json');
-        const cloudData = await res.json();
-        
-        // Sprawdzamy, czy w chmurze są fizycznie jakieś gry (czy nie jest to pusta baza)
-        if (cloudData && cloudData.games && cloudData.games.length > 0) {
-            const cloudString = JSON.stringify(cloudData);
-            
-            // Jeśli chmura różni się od tego co na dysku (np. wszedłeś z nowego komputera)
-            if (cloudString !== str) {
-                console.log("Pobrano nowsze dane z chmury. Aktualizuję system...");
-                localStorage.setItem(STORAGE_KEY, cloudString); // Zapisujemy na dysk
-                window.cloudSyncReady = true; // Zdejmujemy blokadę
-                location.reload(); // Wymuszamy odświeżenie strony, by pokazać nowe tabele!
+    // 2. BEZPIECZNE POBIERANIE W TLE
+    fetch('https://magazyn-a31e4-default-rtdb.europe-west1.firebasedatabase.app/data.json')
+        .then(res => res.json())
+        .then(cloudData => {
+            // Jeśli chmura jest pełna gier
+            if (cloudData && cloudData.games && cloudData.games.length > 0) {
+                // Zabezpieczenie brakujących tablic z chmury
+                if(!cloudData.clients) cloudData.clients=[]; 
+                if(!cloudData.games) cloudData.games=[];
+                if(!cloudData.history) cloudData.history=[]; 
+                if(!cloudData.inventory) cloudData.inventory=[];
+
+                const cloudString = JSON.stringify(cloudData);
+                
+                if (!str) {
+                    // Czysty komputer - nadpisujemy dysk twardy chmurą i odświeżamy tabelę
+                    localStorage.setItem(STORAGE_KEY, cloudString);
+                    window.cloudSyncReady = true;
+                    location.reload(); 
+                } else if (cloudString !== str && !sessionStorage.getItem('cloud_synced')) {
+                    // Tryb hybrydowy - jeśli chmura ma nowe gry, pobierz raz (blokada pętli reloadu)
+                    sessionStorage.setItem('cloud_synced', 'true');
+                    localStorage.setItem(STORAGE_KEY, cloudString);
+                    window.cloudSyncReady = true;
+                    location.reload();
+                } else {
+                    window.cloudSyncReady = true; // Zgodność - zdejmujemy blokadę zapisu
+                }
+            } else {
+                window.cloudSyncReady = true; // Chmura pusta, zdejmujemy blokadę
             }
-        } else {
-            console.log("Baza w chmurze jest pusta lub uszkodzona.");
-        }
-    } catch (err) {
-        console.error("Błąd Firebase:", err);
-    }
+        })
+        .catch(err => {
+            console.error("Działasz Offline:", err);
+            window.cloudSyncReady = true; 
+        });
 },
                 exportData: () => {
                     const blob = new Blob([JSON.stringify(app.data)], {type: 'application/json'});
@@ -2146,7 +2160,7 @@ function confirmAllegroSync() {
     processedOrders = processedOrders.concat(pendingAllegroOrdersIds);
     localStorage.setItem('processed_allegro_orders', JSON.stringify(processedOrders));
 
-    saveData(); 
+    app.io.save();
     document.getElementById('allegro-review-modal').style.display = 'none';
     
     alert(updateMessage);
