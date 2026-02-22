@@ -1,25 +1,26 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 exports.handler = async (event) => {
-    // Netlify automatycznie pobierze klucz stąd:
+    // Pobranie klucza z Netlify Environment Variables
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     
+    // NAPRAWA BŁĘDU 404: dodajemy prefiks 'models/'
+    const model = genAI.getGenerativeModel({ model: "models/gemini-1.5-flash" });
+
     try {
         const body = JSON.parse(event.body);
         
-        // Używamy bezpośredniego odwołania do wersji 1.5-flash
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
-        const prompt = `Jesteś inteligentnym asystentem magazynu gier planszowych. 
-        Analizuj te dane zamówień z Allegro (JSON): ${body.text}.
-        Wypisz tylko: tytuł gry i ilość sztuk. Krótko.`;
+        const prompt = `Jesteś asystentem magazyniera gier planszowych. 
+        Otrzymałeś dane z zamówień Allegro: ${body.text}.
+        Wypisz krótko: jakie gry kupiono i w jakiej ilości.`;
 
         const result = await model.generateContent(prompt);
         const response = await result.response;
-        
+        const text = response.text();
+
         return {
             statusCode: 200,
-            body: JSON.stringify({ answer: response.text() })
+            body: JSON.stringify({ answer: text })
         };
     } catch (error) {
         return {
