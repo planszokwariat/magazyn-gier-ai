@@ -4,7 +4,6 @@ exports.handler = async (event) => {
     let token = event.headers.authorization;
     if (!token) return { statusCode: 401, body: "Brak tokenu" };
 
-    // Zabezpieczenie tokenu słowem Bearer
     if (!token.startsWith('Bearer ')) {
         token = 'Bearer ' + token;
     }
@@ -14,9 +13,9 @@ exports.handler = async (event) => {
 
     let url = 'https://api.allegro.pl/order/checkout-forms?status=READY_FOR_PROCESSING';
 
-    // POPRAWKA: Prawidłowe zmienne API Allegro to 'updated.gte' oraz 'updated.lte'
-    if (dateFrom) url += `&updated.gte=${dateFrom}T00:00:00.000Z`;
-    if (dateTo) url += `&updated.lte=${dateTo}T23:59:59.999Z`;
+    // KLUCZOWA ZMIANA: Szukamy dokładnie po Dacie Zakupu (Kup Teraz), a nie dacie modyfikacji statusu paczki
+    if (dateFrom) url += `&lineItems.boughtAt.gte=${dateFrom}T00:00:00.000Z`;
+    if (dateTo) url += `&lineItems.boughtAt.lte=${dateTo}T23:59:59.999Z`;
 
     try {
         const response = await axios.get(url, {
@@ -25,15 +24,9 @@ exports.handler = async (event) => {
                 'Accept': 'application/vnd.allegro.public.v1+json' 
             }
         });
-        return { 
-            statusCode: 200, 
-            body: JSON.stringify(response.data) 
-        };
+        return { statusCode: 200, body: JSON.stringify(response.data) };
     } catch (error) {
         const errorDetails = error.response?.data ? error.response.data : error.message;
-        return { 
-            statusCode: 500, 
-            body: JSON.stringify({ error: errorDetails }) 
-        };
+        return { statusCode: 500, body: JSON.stringify({ error: errorDetails }) };
     }
 };
