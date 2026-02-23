@@ -2039,10 +2039,52 @@ document.addEventListener("click", function(e) {
     }
 });
 
-// ---- SZYBKIE CZYTANIE DANYCH Z AUTOMATYCZNYM KANTOREM NBP ----
+async function syncAllegroOrders() {
+    const token = localStorage.getItem('allegro_token');
+    const statusEl = document.getElementById('allegro-status');
+
+    if (!token) {
+        alert("Błąd: Nie jesteś połączony z Allegro! Kliknij 'Połącz'.");
+        return;
+    }
+
+    const dateFrom = document.getElementById('allegro-date-from').value;
+    const dateTo = document.getElementById('allegro-date-to').value;
+
+    if (!dateFrom || !dateTo) {
+        alert("Wybierz zakres dat przed pobraniem zamówień!");
+        return;
+    }
+
+    if(statusEl) statusEl.innerText = "Status: Pobieranie zamówień z Allegro...";
+
+    try {
+        const response = await fetch(`/.netlify/functions/allegro-sync?from=${dateFrom}&to=${dateTo}`, {
+            headers: { 'Authorization': token }
+        });
+        
+        if (!response.ok) {
+            alert("Odmowa dostępu z Allegro! Twój klucz wygasł.\nRozłącz i połącz ponownie.");
+            if(statusEl) statusEl.innerText = "Status: ❌ Wygasły klucz";
+            return;
+        }
+
+        const data = await response.json();
+        let checkoutForms = data.checkoutForms || [];
+        
+        let processedOrders = JSON.parse(localStorage.getItem('processed_allegro_orders') || '[]');
+        let newOrders = checkoutForms.filter(order => !processedOrders.includes(order.id));
+
+        if (newOrders.length === 0) {
+            alert("Brak nowych zamówień w tym przedziale czasowym.");
+            if(statusEl) statusEl.innerText = "Status: ✅ Brak nowych zamówień";
+            return;
+        }
+
+        pendingAllegroOrdersIds = newOrders.map(o => o.id);
         if(statusEl) statusEl.innerText = "Status: Przeliczanie walut wg tabel NBP...";
 
-        // Wewnętrzna funkcja zaciągająca kursy z NBP z "cofaniem" na weekendy
+        // ---- SZYBKIE CZYTANIE DANYCH Z AUTOMATYCZNYM KANTOREM NBP ----
         async function getNbpRate(currency, dateStr) {
             if (currency === 'PLN') return 1;
             let attempts = 0;
@@ -2056,12 +2098,12 @@ document.addEventListener("click", function(e) {
                         const data = await res.json();
                         return data.rates[0].mid;
                     }
-                } catch (e) { } // Ciche ignorowanie błędu, pętla cofa datę
+                } catch (e) { } 
                 
                 currentDate.setDate(currentDate.getDate() - 1);
                 attempts++;
             }
-            return 1; // Fallback awaryjny
+            return 1;
         }
 
         let soldGamesRaw = [];
@@ -2073,32 +2115,32 @@ document.addEventListener("click", function(e) {
                         ilosc: item.quantity,
                         cena: parseFloat(item.price.amount),
                         waluta: item.price.currency,
-                        dataZakupu: item.boughtAt.split('T')[0] // Data do NBP
+                        dataZakupu: item.boughtAt ? item.boughtAt.split('T')[0] : new Date().toISOString().split('T')[0] 
                     });
                 });
             }
         });
 
-        // Przeliczanie w locie z użyciem NBP
         let soldGames = [];
         for (let game of soldGamesRaw) {
             let kurs = await getNbpRate(game.waluta, game.dataZakupu);
-            let cenaPLN = (game.cena * kurs).toFixed(2); // Przeliczenie na zł i ucięcie do groszy
+            let cenaPLN = (game.cena * kurs).toFixed(2); 
             
             soldGames.push({
                 tytul: game.tytul,
                 ilosc: game.ilosc,
-                cena: parseFloat(cenaPLN), // Już w PLN, gotowe dla koszyka
+                cena: parseFloat(cenaPLN), 
                 oryginalnaCena: game.cena,
                 oryginalnaWaluta: game.waluta
             });
         }
-        // BAZA PODPOWIEDZI Z PAMIĘCI APLIKACJI (Nie z HTML!)
+
+        // BAZA PODPOWIEDZI Z PAMIĘCI APLIKACJI
         window.allegroInventoryTitles = app.data.games.map(g => g.title);
 
         let html = '<table style="width:100%; border-collapse: collapse; text-align: left;">';
         html += '<tr style="border-bottom: 1px solid #444;">';
-        html += '<th style="width: 35%; padding: 5px;">Allegro (AI)</th>';
+        html += '<th style="width: 35%; padding: 5px;">Allegro</th>';
         html += '<th style="width: 10%; text-align: center;">Szt.</th>';
         html += '<th style="width: 15%; text-align: center;">Cena szt.</th>';
         html += '<th style="width: 40%; padding: 5px;">Znajdź w magazynie</th>';
@@ -2112,11 +2154,18 @@ document.addEventListener("click", function(e) {
                     break;
                 }
             }
+            
+            let priceDisplay = game.oryginalnaWaluta === 'PLN' 
+                ? `${game.cena} zł` 
+                : `${game.cena} zł <br><span style="font-size:10px; color:#aaa;">(NBP: ${game.oryginalnaCena} ${game.oryginalnaWaluta})</span>`;
 
             html += `<tr style="border-bottom: 1px solid #444;">
                 <td style="padding: 10px 5px; font-size: 14px; color: #ccc;">${game.tytul}</td>
                 <td id="allegro-qty-${index}" style="font-weight: bold; color: #ffb74d; text-align: center;">${game.ilosc}</td>
-                <td id="allegro-price-${index}" style="font-weight: bold; color: #8bc34a; text-align: center;">${game.cena} zł</td>
+                <td id="allegro-price-display-${index}" style="font-weight: bold; color: #8bc34a; text-align: center; line-height: 1.2;">
+                    ${priceDisplay}
+                    <span id="allegro-price-${index}" style="display:none;">${game.cena}</span>
+                </td>
                 <td style="padding: 10px 5px; position: relative;">
                     <input type="text" id="allegro-match-${index}" value="${matchedTitle}" 
                     placeholder="Wpisz nazwę (puste=Ignoruj)" autocomplete="off"
@@ -2143,34 +2192,30 @@ function confirmAllegroSync() {
     let reviewDropdowns = document.querySelectorAll('[id^="allegro-match-"]');
     let matchFound = false;
     
-    // 1. Otwieramy Twój standardowy panel sprzedaży (to automatycznie czyści stary koszyk)
     app.modals.openSale();
-    app.tempSaleItems = []; // Upewniamy się, że koszyk jest pusty
+    app.tempSaleItems = []; 
 
     reviewDropdowns.forEach((dropdown, index) => {
         let selectedTitle = dropdown.value.trim();
-        if (!selectedTitle) return; // Zignorowane (puste) pozycje
+        if (!selectedTitle) return; 
 
         let qty = parseInt(document.getElementById(`allegro-qty-${index}`).innerText);
         let priceText = document.getElementById(`allegro-price-${index}`).innerText;
         let price = parseFloat(priceText.replace(' zł', '').trim());
 
-        // 2. Szukamy gry w Twojej bazie głównej
         let gameObj = app.data.games.find(g => g.title === selectedTitle);
 
         if (gameObj) {
-            // Szukamy, na którym magazynie gra leży (aby z niego zdjąć sztuki)
             let invItem = app.data.inventory.find(i => i.gameId === gameObj.id && i.qty >= qty);
             if (!invItem) invItem = app.data.inventory.find(i => i.gameId === gameObj.id && i.qty > 0);
             let wh = invItem ? invItem.warehouse : 'Magazyn';
 
-            // 3. Wrzucamy pozycję prosto do oficjalnego koszyka modułu Sprzedaż!
             app.tempSaleItems.push({
                 gameId: gameObj.id,
                 title: gameObj.title,
                 warehouse: wh,
                 qty: qty,
-                price: price, // Cena pobrana z Allegro
+                price: price, 
                 totalVal: qty * price
             });
             matchFound = true;
@@ -2184,25 +2229,17 @@ function confirmAllegroSync() {
         return;
     }
 
-    // 4. Zapis ID zamówień, żeby się nie dublowały przy kolejnym pobieraniu
     let processedOrders = JSON.parse(localStorage.getItem('processed_allegro_orders') || '[]');
     processedOrders = processedOrders.concat(pendingAllegroOrdersIds);
     localStorage.setItem('processed_allegro_orders', JSON.stringify(processedOrders));
     
-    // 5. Ustawiamy datę z kalendarza pobierania (z pola "Od daty") jako datę na paragonie
     let dateFrom = document.getElementById('allegro-date-from').value;
     if (dateFrom) document.getElementById('saleDate').value = dateFrom;
     
-    // Wpisujemy automatyczną adnotację w polu klienta
     document.getElementById('saleClient').value = "Zamówienia Allegro";
     
-    // Renderujemy widok koszyka w Twoim panelu
     app.ui.renderSaleItems();
-    
-    // Zamykamy to czarne okienko weryfikacyjne Allegro
     document.getElementById('allegro-review-modal').style.display = 'none';
-    
-    // Informujemy o sukcesie
     app.ui.showToast('✅ Przeniesiono zamówienia do modułu Sprzedaży!', 'success');
 }
 </script>
