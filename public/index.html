@@ -244,11 +244,16 @@
         <button class="btn-danger" onclick="app.logic.clearData()">⚠️ RESET DANYCH</button>
         <input type="file" id="importFile" style="display:none" onchange="app.io.importData(this)">
     </div>
-<div id="allegro-panel" style="margin: 20px; padding: 15px; background: var(--color-surface); border-radius: 8px; border: 1px solid var(--color-accent);">
-    <h3 style="margin-top: 0; color: var(--color-accent);">Automatyzacja Allegro</h3>
-    <p id="allegro-status" style="font-size: 0.9em; color: var(--color-text-muted);">Status: Niepołączono</p>
-    <button id="btn-allegro-login" onclick="loginToAllegro()" class="btn-primary">Połącz z Allegro</button>
-    <button id="btn-allegro-sync" onclick="syncAllegroOrders()" class="btn-secondary" style="display: none;">Pobierz nowe zamówienia</button>
+<div style="background: #2d2d2d; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #4CAF50;">
+    <h3 style="margin-top:0; color: #4CAF50;">🛒 Pobierz sprzedaż z Allegro</h3>
+    <label style="color:white; margin-right:5px;">Od daty:</label>
+    <input type="date" id="allegro-date-from" style="padding:6px; margin-right:15px; background:#444; color:white; border:none; border-radius:4px;">
+    
+    <label style="color:white; margin-right:5px;">Do daty:</label>
+    <input type="date" id="allegro-date-to" style="padding:6px; margin-right:15px; background:#444; color:white; border:none; border-radius:4px;">
+    
+    <button onclick="syncAllegroOrders()" style="background: #4CAF50; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-weight:bold;">Pobierz zamówienia</button>
+    <span id="allegro-status" style="margin-left: 10px; color: #ccc;"></span>
 </div>
     <!-- MAIN CONTENT -->
     <div class="main-content">
@@ -2015,53 +2020,53 @@ document.addEventListener("click", function(e) {
 async function syncAllegroOrders() {
     const token = localStorage.getItem('allegro_token');
     const statusEl = document.getElementById('allegro-status');
-    if(statusEl) statusEl.innerText = "Status: AI analizuje zamówienia...";
+    const dateFrom = document.getElementById('allegro-date-from').value;
+    const dateTo = document.getElementById('allegro-date-to').value;
+
+    if (!dateFrom || !dateTo) {
+        alert("Wybierz zakres dat przed pobraniem zamówień!");
+        return;
+    }
+
+    if(statusEl) statusEl.innerText = "Status: Pobieranie zamówień z Allegro...";
 
     try {
-        const response = await fetch('/.netlify/functions/allegro-sync', { headers: { 'Authorization': token } });
+        // Przekazanie zakresu dat do backendu
+        const response = await fetch(`/.netlify/functions/allegro-sync?from=${dateFrom}&to=${dateTo}`, {
+            headers: { 'Authorization': token }
+        });
         const data = await response.json();
         
         let checkoutForms = data.checkoutForms || [];
+        
+        // ZABEZPIECZENIE PRZED DUBLOWANIEM (Odfiltrowanie ID, które już są w historii operacji Allegro)
         let processedOrders = JSON.parse(localStorage.getItem('processed_allegro_orders') || '[]');
         let newOrders = checkoutForms.filter(order => !processedOrders.includes(order.id));
 
         if (newOrders.length === 0) {
-            alert("Brak nowych zamówień do przetworzenia.");
+            alert("Brak nowych zamówień w tym przedziale czasowym (lub wszystkie zostały już zaimportowane).");
             if(statusEl) statusEl.innerText = "Status: ✅ Brak nowych zamówień";
             return;
         }
 
         pendingAllegroOrdersIds = newOrders.map(o => o.id);
+        if(statusEl) statusEl.innerText = "Status: AI analizuje zamówienia i ceny...";
+
         const aiResponse = await askAgent(JSON.stringify(newOrders), 'allegro_sync');
         
         let soldGames = [];
         try { soldGames = JSON.parse(aiResponse); } 
         catch (e) { alert("Błąd formatu. AI odpowiedziało:\n\n" + aiResponse.substring(0, 400)); return; }
 
-        // --- POPRAWIONY RADAR: TERAZ PATRZY NA KOLUMNĘ "TYTUŁ" ---
-        window.allegroInventoryTitles = [];
-        document.querySelectorAll('tr').forEach(row => {
-            // Ignorujemy wiersze okienka AI oraz nagłówki tabeli
-            if (row.closest('#allegro-review-modal') || !row.cells[1] || row.cells[1].tagName === 'TH') return;
-            
-            // ZMIANA: Pobieramy dane z DRUGIEJ kolumny (indeks 1), gdzie są Tytuły
-            let cell = row.cells[1]; 
-            
-            let inputField = cell.querySelector('input');
-            let title = inputField ? inputField.value.trim() : cell.innerText.trim();
-            
-            if (title && title !== "") {
-                window.allegroInventoryTitles.push(title); 
-            }
-        });
-        
-        window.allegroInventoryTitles = [...new Set(window.allegroInventoryTitles)];
+        // BAZA PODPOWIEDZI Z PAMIĘCI APLIKACJI (Nie z HTML!)
+        window.allegroInventoryTitles = app.data.games.map(g => g.title);
 
         let html = '<table style="width:100%; border-collapse: collapse; text-align: left;">';
         html += '<tr style="border-bottom: 1px solid #444;">';
-        html += '<th style="width: 40%; padding: 5px;">Allegro (AI)</th>';
-        html += '<th style="width: 15%; text-align: center;">Szt.</th>';
-        html += '<th style="width: 45%; padding: 5px;">Znajdź w magazynie</th>';
+        html += '<th style="width: 35%; padding: 5px;">Allegro (AI)</th>';
+        html += '<th style="width: 10%; text-align: center;">Szt.</th>';
+        html += '<th style="width: 15%; text-align: center;">Cena szt.</th>';
+        html += '<th style="width: 40%; padding: 5px;">Znajdź w magazynie</th>';
         html += '</tr>';
 
         soldGames.forEach((game, index) => {
@@ -2072,10 +2077,14 @@ async function syncAllegroOrders() {
                     break;
                 }
             }
+            
+            // AI zwraca teraz też "cena", zabezpieczamy gdyby nie znalazło
+            let itemPrice = game.cena || 0; 
 
             html += `<tr style="border-bottom: 1px solid #444;">
                 <td style="padding: 10px 5px; font-size: 14px; color: #ccc;">${game.tytul}</td>
                 <td id="allegro-qty-${index}" style="font-weight: bold; color: #ffb74d; text-align: center;">${game.ilosc}</td>
+                <td id="allegro-price-${index}" style="font-weight: bold; color: #8bc34a; text-align: center;">${itemPrice} zł</td>
                 <td style="padding: 10px 5px; position: relative;">
                     <input type="text" id="allegro-match-${index}" value="${matchedTitle}" 
                     placeholder="Wpisz nazwę (puste=Ignoruj)" autocomplete="off"
@@ -2099,56 +2108,76 @@ async function syncAllegroOrders() {
 }
 
 function confirmAllegroSync() {
-    let rows = document.querySelectorAll('tr'); 
     let reviewDropdowns = document.querySelectorAll('[id^="allegro-match-"]');
-    let updateMessage = "Zarejestrowano sprzedaż:\n";
-    let historyBody = document.getElementById('history-body');
+    let updateMessage = "Zarejestrowano sprzedaż z Allegro:\n\n";
 
     reviewDropdowns.forEach((dropdown, index) => {
         let selectedTitle = dropdown.value.trim();
-        if (!selectedTitle) return;
+        if (!selectedTitle) return; // Zignorowane
 
         let qty = parseInt(document.getElementById(`allegro-qty-${index}`).innerText);
-        let matchFound = false;
+        let price = parseFloat(document.getElementById(`allegro-price-${index}`).innerText);
 
-        rows.forEach(row => {
-            // Ignorujemy wiersze okienka AI oraz nagłówki tabeli
-            if (row.closest('#allegro-review-modal') || !row.cells[1] || row.cells[1].tagName === 'TH') return;
-            
-            // ZMIANA: Porównujemy wybrany tytuł z DRUGĄ kolumną tabeli
-            let cell = row.cells[1];
-            
-            let inputField = cell.querySelector('input');
-            let rowTitle = inputField ? inputField.value.trim() : cell.innerText.trim();
+        // 1. ZNALEZIENIE GRY W BAZIE
+        let gameObj = app.data.games.find(g => g.title === selectedTitle);
 
-            if (rowTitle === selectedTitle) {
-                matchFound = true;
-                // ZMIANA: Ilość jest w PIĄTEJ kolumnie (indeks 4)
-                let stockCell = row.cells[4]; 
-                let currentStock = parseInt(stockCell.innerText) || 0;
-                stockCell.innerText = Math.max(0, currentStock - qty);
-                updateMessage += `- ${selectedTitle}: -${qty} szt.\n`;
+        if (gameObj) {
+            // 2. FIZYCZNE ODJĘCIE ZE STANU (w app.data.inventory)
+            let inventoryItems = app.data.inventory.filter(i => i.gameId === gameObj.id && i.qty > 0);
+            let remainingToDeduct = qty;
 
-                if (historyBody) {
-                    let d = new Date().toLocaleString('pl-PL');
-                    let newHistoryRow = `<tr style="color: #ffb74d;"><td>${d}</td><td>Sprzedaż (Allegro)</td><td>${selectedTitle}</td><td>-${qty}</td></tr>`;
-                    historyBody.innerHTML = newHistoryRow + historyBody.innerHTML;
+            // Odejmowanie kaskadowe (jeśli gra leży na różnych magazynach)
+            inventoryItems.forEach(inv => {
+                if (remainingToDeduct > 0) {
+                    let deduct = Math.min(inv.qty, remainingToDeduct);
+                    inv.qty -= deduct;
+                    remainingToDeduct -= deduct;
+                }
+            });
+
+            // Jeśli brakuje na stanie (zejście na minus)
+            if (remainingToDeduct > 0) {
+                let mainInv = app.data.inventory.find(i => i.gameId === gameObj.id);
+                if (mainInv) {
+                    mainInv.qty -= remainingToDeduct;
+                } else {
+                    app.data.inventory.push({ gameId: gameObj.id, warehouse: 'Magazyn Główny', qty: -remainingToDeduct, val: 0, valGross: 0, lastNetPrice: 0 });
                 }
             }
-        });
 
-        if(!matchFound) updateMessage += `❌ UWAGA: Nie udało się odjąć "${selectedTitle}" - nie ma takiej gry w tabeli głównej!\n`;
+            // 3. ZAPIS DO HISTORII TRANSAKCJI (PZ/WZ/Sprzedaż)
+            let d = new Date().toISOString(); 
+            app.data.history.push({
+                id: Date.now() + Math.floor(Math.random() * 1000),
+                date: d,
+                type: 'Sprzedaż',
+                clientId: null, // Jeśli chcesz, można tu wstawić ID "Allegro" z bazy Klientów
+                gameId: gameObj.id,
+                qty: qty,
+                priceNet: price / 1.23, // Zakładamy uśredniony VAT 23%
+                priceGross: price,
+                warehouse: 'Sprzedaż Allegro'
+            });
+
+            updateMessage += `✅ ${selectedTitle}: -${qty} szt. (Cena: ${price} zł)\n`;
+        } else {
+            updateMessage += `❌ UWAGA: Nie znaleziono gry "${selectedTitle}" w systemie!\n`;
+        }
     });
 
+    // ZAPIS ZABEZPIECZENIA PRZED DUBLAMI
     let processedOrders = JSON.parse(localStorage.getItem('processed_allegro_orders') || '[]');
     processedOrders = processedOrders.concat(pendingAllegroOrdersIds);
     localStorage.setItem('processed_allegro_orders', JSON.stringify(processedOrders));
 
-    app.io.save();
-    document.getElementById('allegro-review-modal').style.display = 'none';
+    // WYWOŁANIE ZAPISU DO FIREBASE
+    app.io.save(); 
     
+    document.getElementById('allegro-review-modal').style.display = 'none';
     alert(updateMessage);
-    document.getElementById('allegro-status').innerText = "Status: ✅ Synchronizacja i rejestracja zakończona";
+    
+    // ODŚWIEŻENIE STRONY ABY POKAZAĆ NOWE DANE (Odświeży historię i nowe stany na bieżąco)
+    location.reload(); 
 }
 </script>
 
