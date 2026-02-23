@@ -2,32 +2,24 @@ const axios = require('axios');
 
 exports.handler = async (event) => {
     const token = event.headers.authorization;
-    
+    if (!token) return { statusCode: 401, body: "Brak tokenu" };
+
+    // Odczytywanie dat z zapytania
+    const dateFrom = event.queryStringParameters.from;
+    const dateTo = event.queryStringParameters.to;
+
+    let url = 'https://api.allegro.pl/order/checkout-forms?status=READY_FOR_PROCESSING';
+
+    // Jeśli podano daty, "doklejamy" je do adresu API Allegro
+    if (dateFrom) url += `&updated.gte=${dateFrom}T00:00:00.000Z`;
+    if (dateTo) url += `&updated.lte=${dateTo}T23:59:59.999Z`;
+
     try {
-        // 1. DYNAMICZNA DATA: Pobieramy dzisiejszą datę
-        const now = new Date();
-        
-        // 2. Cofamy się do 1. dnia obecnego miesiąca (godzina 00:00:00)
-        const firstDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-        
-        // 3. Zamieniamy na format wymagany przez Allegro (np. "2026-02-01T00:00:00.000Z")
-        const dateString = firstDay.toISOString();
-
-        // 4. Wstawiamy tę datę do zapytania
-        const url = `https://api.allegro.pl/order/checkout-forms?updatedAt.gte=${dateString}&limit=100`;
-
         const response = await axios.get(url, {
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Accept': 'application/vnd.allegro.public.v1+json'
-            }
+            headers: { 'Authorization': token, 'Accept': 'application/vnd.allegro.public.v1+json' }
         });
-
-        return {
-            statusCode: 200,
-            body: JSON.stringify(response.data)
-        };
+        return { statusCode: 200, body: JSON.stringify(response.data) };
     } catch (error) {
-        return { statusCode: 500, body: JSON.stringify(error.message) };
+        return { statusCode: 500, body: JSON.stringify({ error: error.message }) };
     }
 };
