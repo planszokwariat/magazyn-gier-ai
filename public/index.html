@@ -2042,6 +2042,14 @@ document.addEventListener("click", function(e) {
 async function syncAllegroOrders() {
     const token = localStorage.getItem('allegro_token');
     const statusEl = document.getElementById('allegro-status');
+
+    // 1. TWARDA BLOKADA: Jeśli klikniesz pobierz, a nie jesteś połączony
+    if (!token) {
+        alert("Błąd: Nie jesteś połączony z Allegro! Kliknij najpierw żółty przycisk 'Połącz'.");
+        if(statusEl) statusEl.innerText = "Status: ❌ Brak połączenia";
+        return;
+    }
+
     const dateFrom = document.getElementById('allegro-date-from').value;
     const dateTo = document.getElementById('allegro-date-to').value;
 
@@ -2053,12 +2061,18 @@ async function syncAllegroOrders() {
     if(statusEl) statusEl.innerText = "Status: Pobieranie zamówień z Allegro...";
 
     try {
-        // Przekazanie zakresu dat do backendu
         const response = await fetch(`/.netlify/functions/allegro-sync?from=${dateFrom}&to=${dateTo}`, {
             headers: { 'Authorization': token }
         });
-        const data = await response.json();
         
+        // 2. TWARDA BLOKADA: Jeśli Allegro odrzuci nasz stary klucz (Błąd 401 lub 500)
+        if (!response.ok) {
+            alert("Odmowa dostępu z Allegro! Twój klucz wygasł (mija 12 godzin) lub wystąpił błąd.\n\nKliknij czerwony przycisk 'Rozłącz', a następnie połącz się ponownie.");
+            if(statusEl) statusEl.innerText = "Status: ❌ Błąd / Wygasły klucz";
+            return;
+        }
+
+        const data = await response.json();
         let checkoutForms = data.checkoutForms || [];
         
         // ZABEZPIECZENIE PRZED DUBLOWANIEM (Odfiltrowanie ID, które już są w historii operacji Allegro)
