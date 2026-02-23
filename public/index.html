@@ -244,7 +244,60 @@
         <button class="btn-danger" onclick="app.logic.clearData()">⚠️ RESET DANYCH</button>
         <input type="file" id="importFile" style="display:none" onchange="app.io.importData(this)">
     </div>
-https://docs.google.com/spreadsheets/d/1p5q0tv3CKYh-L2l6Sh35tjkXV1SwAEJ93zLtcVyy7vM/edit?gid=97339361#gid=97339361
+<div style="background: #2d2d2d; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #4CAF50;">
+    <h3 style="margin-top:0; color: #4CAF50; margin-bottom: 15px;">🛒 Pobierz sprzedaż z Allegro</h3>
+    
+    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px;">
+        
+        <button onclick="loginToAllegro()" style="background: #ff9800; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-weight:bold;">🔑 Połącz</button>
+        <button onclick="disconnectAllegro()" style="background: #ff5252; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-weight:bold;">Rozłącz</button>
+        <span id="allegro-status" style="color: #ccc; font-weight:bold; margin-right: 10px;">
+            <script>
+                // Odświeżony skrypt statusu
+                document.write(localStorage.getItem('allegro_token') ? "✅ Połączono" : "❌ Rozłączono");
+            </script>
+        </span>
+
+        <button onclick="syncAllegroToday()" style="background: #2196F3; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-weight:bold; margin-right: 5px;">⚡ Pobierz z dziś</button>
+
+        <button onclick="setAllegroDate('yesterday')" style="background: #555; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer;">📅 Wczoraj</button>
+        <button onclick="setAllegroDate('dayBeforeYesterday')" style="background: #555; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; margin-right: 5px;">📅 Przedwczoraj</button>
+        
+        <label style="color:white;">Od:</label>
+        <input type="date" id="allegro-date-from" style="padding:7px; background:#444; color:white; border:none; border-radius:4px; color-scheme: dark; cursor: pointer;">
+        
+        <label style="color:white;">Do:</label>
+        <input type="date" id="allegro-date-to" style="padding:7px; background:#444; color:white; border:none; border-radius:4px; color-scheme: dark; cursor: pointer;">
+        
+        <button id="btn-allegro-sync" onclick="syncAllegroOrders()" style="background: #4CAF50; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-weight:bold;">Pobierz z zakresu</button>
+    </div>
+    
+    <script>
+        function setAllegroDate(type) {
+            let d = new Date();
+            if (type === 'yesterday') d.setDate(d.getDate() - 1);
+            if (type === 'dayBeforeYesterday') d.setDate(d.getDate() - 2);
+            
+            // Poprawka na strefę czasową
+            let local = new Date(d.getTime() - (d.getTimezoneOffset() * 60000));
+            let isoDate = local.toISOString().split('T')[0];
+            
+            document.getElementById('allegro-date-from').value = isoDate;
+            document.getElementById('allegro-date-to').value = isoDate;
+        }
+
+        function syncAllegroToday() {
+            let d = new Date();
+            let local = new Date(d.getTime() - (d.getTimezoneOffset() * 60000));
+            let isoDate = local.toISOString().split('T')[0];
+            
+            // Ustawia dziś i od razu odpala pobieranie
+            document.getElementById('allegro-date-from').value = isoDate;
+            document.getElementById('allegro-date-to').value = isoDate;
+            syncAllegroOrders();
+        }
+    </script>
+</div>
     <!-- MAIN CONTENT -->
     <div class="main-content">
         <div class="panel">
