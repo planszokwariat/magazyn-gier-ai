@@ -9,7 +9,7 @@ exports.handler = async (event) => {
         
         // Skoro mamy wymuszenie, możemy uprościć prośbę
         const promptText = `Przeanalizuj zamówienia z Allegro: ${body.text}. 
-        Zwróć wynik jako tablicę obiektów, gdzie każdy obiekt zawiera klucze "tytul" (nazwa gry) oraz "ilosc" (liczba sztuk).`;
+Zwróć wynik jako tablicę obiektów JSON. Każdy obiekt ma mieć klucze: "tytul" (nazwa gry), "ilosc" (liczba sztuk jako liczba całkowita) oraz "cena" (cena brutto za 1 sztukę jako liczba).`;
 
         const response = await axios.post(
             `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
