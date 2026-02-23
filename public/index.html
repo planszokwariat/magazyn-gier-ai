@@ -2039,61 +2039,60 @@ document.addEventListener("click", function(e) {
     }
 });
 
-async function syncAllegroOrders() {
-    const token = localStorage.getItem('allegro_token');
-    const statusEl = document.getElementById('allegro-status');
+// ---- SZYBKIE CZYTANIE DANYCH Z AUTOMATYCZNYM KANTOREM NBP ----
+        if(statusEl) statusEl.innerText = "Status: Przeliczanie walut wg tabel NBP...";
 
-    // 1. TWARDA BLOKADA: Jeśli klikniesz pobierz, a nie jesteś połączony
-    if (!token) {
-        alert("Błąd: Nie jesteś połączony z Allegro! Kliknij najpierw żółty przycisk 'Połącz'.");
-        if(statusEl) statusEl.innerText = "Status: ❌ Brak połączenia";
-        return;
-    }
+        // Wewnętrzna funkcja zaciągająca kursy z NBP z "cofaniem" na weekendy
+        async function getNbpRate(currency, dateStr) {
+            if (currency === 'PLN') return 1;
+            let attempts = 0;
+            let currentDate = new Date(dateStr);
+            
+            while (attempts < 7) {
+                let dateFormatted = currentDate.toISOString().split('T')[0];
+                try {
+                    const res = await fetch(`https://api.nbp.pl/api/exchangerates/rates/a/${currency.toLowerCase()}/${dateFormatted}/?format=json`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        return data.rates[0].mid;
+                    }
+                } catch (e) { } // Ciche ignorowanie błędu, pętla cofa datę
+                
+                currentDate.setDate(currentDate.getDate() - 1);
+                attempts++;
+            }
+            return 1; // Fallback awaryjny
+        }
 
-    const dateFrom = document.getElementById('allegro-date-from').value;
-    const dateTo = document.getElementById('allegro-date-to').value;
-
-    if (!dateFrom || !dateTo) {
-        alert("Wybierz zakres dat przed pobraniem zamówień!");
-        return;
-    }
-
-    if(statusEl) statusEl.innerText = "Status: Pobieranie zamówień z Allegro...";
-
-    try {
-        const response = await fetch(`/.netlify/functions/allegro-sync?from=${dateFrom}&to=${dateTo}`, {
-            headers: { 'Authorization': token }
+        let soldGamesRaw = [];
+        newOrders.forEach(order => {
+            if (order.lineItems) {
+                order.lineItems.forEach(item => {
+                    soldGamesRaw.push({
+                        tytul: item.offer.name,
+                        ilosc: item.quantity,
+                        cena: parseFloat(item.price.amount),
+                        waluta: item.price.currency,
+                        dataZakupu: item.boughtAt.split('T')[0] // Data do NBP
+                    });
+                });
+            }
         });
-        
-        // 2. TWARDA BLOKADA: Jeśli Allegro odrzuci nasz stary klucz (Błąd 401 lub 500)
-        if (!response.ok) {
-            alert("Odmowa dostępu z Allegro! Twój klucz wygasł (mija 12 godzin) lub wystąpił błąd.\n\nKliknij czerwony przycisk 'Rozłącz', a następnie połącz się ponownie.");
-            if(statusEl) statusEl.innerText = "Status: ❌ Błąd / Wygasły klucz";
-            return;
-        }
 
-        const data = await response.json();
-        let checkoutForms = data.checkoutForms || [];
-        
-        // ZABEZPIECZENIE PRZED DUBLOWANIEM (Odfiltrowanie ID, które już są w historii operacji Allegro)
-        let processedOrders = JSON.parse(localStorage.getItem('processed_allegro_orders') || '[]');
-        let newOrders = checkoutForms.filter(order => !processedOrders.includes(order.id));
-
-        if (newOrders.length === 0) {
-            alert("Brak nowych zamówień w tym przedziale czasowym (lub wszystkie zostały już zaimportowane).");
-            if(statusEl) statusEl.innerText = "Status: ✅ Brak nowych zamówień";
-            return;
-        }
-
-        pendingAllegroOrdersIds = newOrders.map(o => o.id);
-        if(statusEl) statusEl.innerText = "Status: AI analizuje zamówienia i ceny...";
-
-        const aiResponse = await askAgent(JSON.stringify(newOrders), 'allegro_sync');
-        
+        // Przeliczanie w locie z użyciem NBP
         let soldGames = [];
-        try { soldGames = JSON.parse(aiResponse); } 
-        catch (e) { alert("Błąd formatu. AI odpowiedziało:\n\n" + aiResponse.substring(0, 400)); return; }
-
+        for (let game of soldGamesRaw) {
+            let kurs = await getNbpRate(game.waluta, game.dataZakupu);
+            let cenaPLN = (game.cena * kurs).toFixed(2); // Przeliczenie na zł i ucięcie do groszy
+            
+            soldGames.push({
+                tytul: game.tytul,
+                ilosc: game.ilosc,
+                cena: parseFloat(cenaPLN), // Już w PLN, gotowe dla koszyka
+                oryginalnaCena: game.cena,
+                oryginalnaWaluta: game.waluta
+            });
+        }
         // BAZA PODPOWIEDZI Z PAMIĘCI APLIKACJI (Nie z HTML!)
         window.allegroInventoryTitles = app.data.games.map(g => g.title);
 
@@ -2113,14 +2112,11 @@ async function syncAllegroOrders() {
                     break;
                 }
             }
-            
-            // AI zwraca teraz też "cena", zabezpieczamy gdyby nie znalazło
-            let itemPrice = game.cena || 0; 
 
             html += `<tr style="border-bottom: 1px solid #444;">
                 <td style="padding: 10px 5px; font-size: 14px; color: #ccc;">${game.tytul}</td>
                 <td id="allegro-qty-${index}" style="font-weight: bold; color: #ffb74d; text-align: center;">${game.ilosc}</td>
-                <td id="allegro-price-${index}" style="font-weight: bold; color: #8bc34a; text-align: center;">${itemPrice} zł</td>
+                <td id="allegro-price-${index}" style="font-weight: bold; color: #8bc34a; text-align: center;">${game.cena} zł</td>
                 <td style="padding: 10px 5px; position: relative;">
                     <input type="text" id="allegro-match-${index}" value="${matchedTitle}" 
                     placeholder="Wpisz nazwę (puste=Ignoruj)" autocomplete="off"
