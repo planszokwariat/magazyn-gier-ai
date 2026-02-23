@@ -2145,75 +2145,69 @@ async function syncAllegroOrders() {
 
 function confirmAllegroSync() {
     let reviewDropdowns = document.querySelectorAll('[id^="allegro-match-"]');
-    let updateMessage = "Zarejestrowano sprzedaż z Allegro:\n\n";
+    let matchFound = false;
+    
+    // 1. Otwieramy Twój standardowy panel sprzedaży (to automatycznie czyści stary koszyk)
+    app.modals.openSale();
+    app.tempSaleItems = []; // Upewniamy się, że koszyk jest pusty
 
     reviewDropdowns.forEach((dropdown, index) => {
         let selectedTitle = dropdown.value.trim();
-        if (!selectedTitle) return; // Zignorowane
+        if (!selectedTitle) return; // Zignorowane (puste) pozycje
 
         let qty = parseInt(document.getElementById(`allegro-qty-${index}`).innerText);
-        let price = parseFloat(document.getElementById(`allegro-price-${index}`).innerText);
+        let priceText = document.getElementById(`allegro-price-${index}`).innerText;
+        let price = parseFloat(priceText.replace(' zł', '').trim());
 
-        // 1. ZNALEZIENIE GRY W BAZIE
+        // 2. Szukamy gry w Twojej bazie głównej
         let gameObj = app.data.games.find(g => g.title === selectedTitle);
 
         if (gameObj) {
-            // 2. FIZYCZNE ODJĘCIE ZE STANU (w app.data.inventory)
-            let inventoryItems = app.data.inventory.filter(i => i.gameId === gameObj.id && i.qty > 0);
-            let remainingToDeduct = qty;
+            // Szukamy, na którym magazynie gra leży (aby z niego zdjąć sztuki)
+            let invItem = app.data.inventory.find(i => i.gameId === gameObj.id && i.qty >= qty);
+            if (!invItem) invItem = app.data.inventory.find(i => i.gameId === gameObj.id && i.qty > 0);
+            let wh = invItem ? invItem.warehouse : 'Magazyn';
 
-            // Odejmowanie kaskadowe (jeśli gra leży na różnych magazynach)
-            inventoryItems.forEach(inv => {
-                if (remainingToDeduct > 0) {
-                    let deduct = Math.min(inv.qty, remainingToDeduct);
-                    inv.qty -= deduct;
-                    remainingToDeduct -= deduct;
-                }
-            });
-
-            // Jeśli brakuje na stanie (zejście na minus)
-            if (remainingToDeduct > 0) {
-                let mainInv = app.data.inventory.find(i => i.gameId === gameObj.id);
-                if (mainInv) {
-                    mainInv.qty -= remainingToDeduct;
-                } else {
-                    app.data.inventory.push({ gameId: gameObj.id, warehouse: 'Magazyn Główny', qty: -remainingToDeduct, val: 0, valGross: 0, lastNetPrice: 0 });
-                }
-            }
-
-            // 3. ZAPIS DO HISTORII TRANSAKCJI (PZ/WZ/Sprzedaż)
-            let d = new Date().toISOString(); 
-            app.data.history.push({
-                id: Date.now() + Math.floor(Math.random() * 1000),
-                date: d,
-                type: 'Sprzedaż',
-                clientId: null, // Jeśli chcesz, można tu wstawić ID "Allegro" z bazy Klientów
+            // 3. Wrzucamy pozycję prosto do oficjalnego koszyka modułu Sprzedaż!
+            app.tempSaleItems.push({
                 gameId: gameObj.id,
+                title: gameObj.title,
+                warehouse: wh,
                 qty: qty,
-                priceNet: price / 1.23, // Zakładamy uśredniony VAT 23%
-                priceGross: price,
-                warehouse: 'Sprzedaż Allegro'
+                price: price, // Cena pobrana z Allegro
+                totalVal: qty * price
             });
-
-            updateMessage += `✅ ${selectedTitle}: -${qty} szt. (Cena: ${price} zł)\n`;
+            matchFound = true;
         } else {
-            updateMessage += `❌ UWAGA: Nie znaleziono gry "${selectedTitle}" w systemie!\n`;
+            alert(`❌ UWAGA: Nie znaleziono gry "${selectedTitle}" w systemie! Została pominięta.`);
         }
     });
 
-    // ZAPIS ZABEZPIECZENIA PRZED DUBLAMI
+    if (!matchFound) {
+        document.getElementById('modalSale').close();
+        return;
+    }
+
+    // 4. Zapis ID zamówień, żeby się nie dublowały przy kolejnym pobieraniu
     let processedOrders = JSON.parse(localStorage.getItem('processed_allegro_orders') || '[]');
     processedOrders = processedOrders.concat(pendingAllegroOrdersIds);
     localStorage.setItem('processed_allegro_orders', JSON.stringify(processedOrders));
-
-    // WYWOŁANIE ZAPISU DO FIREBASE
-    app.io.save(); 
     
+    // 5. Ustawiamy datę z kalendarza pobierania (z pola "Od daty") jako datę na paragonie
+    let dateFrom = document.getElementById('allegro-date-from').value;
+    if (dateFrom) document.getElementById('saleDate').value = dateFrom;
+    
+    // Wpisujemy automatyczną adnotację w polu klienta
+    document.getElementById('saleClient').value = "Zamówienia Allegro";
+    
+    // Renderujemy widok koszyka w Twoim panelu
+    app.ui.renderSaleItems();
+    
+    // Zamykamy to czarne okienko weryfikacyjne Allegro
     document.getElementById('allegro-review-modal').style.display = 'none';
-    alert(updateMessage);
     
-    // ODŚWIEŻENIE STRONY ABY POKAZAĆ NOWE DANE (Odświeży historię i nowe stany na bieżąco)
-    location.reload(); 
+    // Informujemy o sukcesie
+    app.ui.showToast('✅ Przeniesiono zamówienia do modułu Sprzedaży!', 'success');
 }
 </script>
 
